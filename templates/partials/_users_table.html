@@ -1,0 +1,81 @@
+{% if users %}
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th style="width: 200px;">ID</th>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Status</th>
+                <th>Quota Usage</th>
+                <th style="width: 200px;">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for u in users %}
+        {% set stored = u.get('storageUsed', 0) or 0 %}
+        {% set quota = u.get('quota', 1073741824) or 1073741824 %}
+        {% set pct = (stored / quota * 100) if quota > 0 else 0 %}
+        {% set pct_display = pct | round(1) %}
+        <tr id="user-row-{{ u.id }}">
+            <td class="font-monospace small text-muted">{{ u.id }}</td>
+            <td>{{ u.name or '—' }}</td>
+            <td>
+                {% for addr in u.get('addresses', []) %}
+                    <span class="d-block small">{{ addr }}</span>
+                {% else %}
+                    <span class="text-muted">{{ u.get('username', '—') }}</span>
+                {% endfor %}
+            </td>
+            <td>
+                {% if u.get('disabled') %}
+                    <span class="badge badge-disabled" id="status-badge-{{ u.id }}">Disabled</span>
+                {% else %}
+                    <span class="badge badge-active" id="status-badge-{{ u.id }}">Active</span>
+                {% endif %}
+            </td>
+            <td>
+                <div class="d-flex justify-content-between small">
+                    <span>{{ (stored / 1048576) | round(1) }} MB</span>
+                    <span class="text-muted">{{ (quota / 1073741824) | round(1) }} GB</span>
+                </div>
+                {% set bar_color = '#dc3545' if pct > 90 else ('#ffc107' if pct > 70 else '#198754') %}
+                <div class="quota-bar">
+                    <div class="quota-bar-fill" style="width: {{ pct_display }}%; background: {{ bar_color }};"></div>
+                </div>
+            </td>
+            <td>
+                <a href="{{ url_for('user_details', user_id=u.id) }}" class="btn btn-sm btn-outline-primary btn-action" title="View Details">
+                    <i class="bi bi-eye"></i>
+                </a>
+                {% if u.get('disabled') %}
+                <button class="btn btn-sm btn-success btn-action" onclick="toggleUserStatus('{{ u.id }}', this)" title="Enable User">
+                    <i class="bi bi-play-circle"></i> Enable
+                </button>
+                {% else %}
+                <button class="btn btn-sm btn-warning btn-action" onclick="toggleUserStatus('{{ u.id }}', this)" title="Disable User">
+                    <i class="bi bi-pause-circle"></i> Disable
+                </button>
+                {% endif %}
+                <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteUser('{{ u.id }}', document.getElementById('user-row-{{ u.id }}'))" title="Delete User">
+                    <i class="bi bi-trash"></i>
+                </button>
+            </td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="bi bi-inbox"></i>
+    <h5>No Users Found</h5>
+    <p class="small">
+        {% if search_query %}
+            No users match "{{ search_query }}".
+        {% else %}
+            No users in the system. Click <strong>New User</strong> to add one.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

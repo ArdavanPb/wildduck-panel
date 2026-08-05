@@ -1,0 +1,24 @@
+# Virtual environment
+venv/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment file (contains secrets)
+.env
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml

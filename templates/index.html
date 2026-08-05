@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% if api_error %}
+<div class="alert alert-danger alert-dismissible fade show" role="alert">
+    <i class="bi bi-exclamation-triangle"></i> {{ api_error }}
+    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<div class="card">
+    <div class="card-header bg-white border-bottom d-flex flex-wrap align-items-center gap-2 py-2">
+        <ul class="nav nav-tabs card-header-tabs flex-grow-1 border-0" role="tablist">
+            <li class="nav-item">
+                <a class="nav-link {{ 'active' if tab == 'users' else '' }}" href="{{ url_for('index', tab='users') }}">
+                    <i class="bi bi-people"></i> Users
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ 'active' if tab == 'domains' else '' }}" href="{{ url_for('index', tab='domains') }}">
+                    <i class="bi bi-globe2"></i> Domains
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link {{ 'active' if tab == 'addresses' else '' }}" href="{{ url_for('index', tab='addresses') }}">
+                    <i class="bi bi-at"></i> Addresses / Aliases
+                </a>
+            </li>
+        </ul>
+
+        <form class="d-flex" method="get" action="{{ url_for('index') }}">
+            <input type="hidden" name="tab" value="{{ tab }}">
+            <div class="input-group input-group-sm">
+                <input type="text" name="query" class="form-control" placeholder="Search..." value="{{ search_query }}">
+                <button class="btn btn-outline-secondary" type="submit">
+                    <i class="bi bi-search"></i>
+                </button>
+                {% if search_query %}
+                <a href="{{ url_for('index', tab=tab) }}" class="btn btn-outline-secondary">
+                    <i class="bi bi-x-lg"></i>
+                </a>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <div class="card-body p-0">
+        {% if tab == 'users' %}
+            {% include 'partials/_users_table.html' %}
+        {% elif tab == 'domains' %}
+            {% include 'partials/_domains_table.html' %}
+        {% elif tab == 'addresses' %}
+            {% include 'partials/_addresses_table.html' %}
+        {% endif %}
+    </div>
+</div>
+
+{% endblock %}

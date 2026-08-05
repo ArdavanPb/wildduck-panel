@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+{% macro pretty_size(bytes) %}
+    {% if bytes %}
+        {% if bytes >= 1073741824 %}
+            {{ '%.2f' | format(bytes / 1073741824) }} GB
+        {% elif bytes >= 1048576 %}
+            {{ '%.2f' | format(bytes / 1048576) }} MB
+        {% elif bytes >= 1024 %}
+            {{ '%.2f' | format(bytes / 1024) }} KB
+        {% else %}
+            {{ bytes }} B
+        {% endif %}
+    {% else %}
+        —
+    {% endif %}
+{% endmacro %}
+
+<div class="row g-3">
+    <!-- Back button -->
+    <div class="col-12">
+        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary btn-sm">
+            <i class="bi bi-arrow-left"></i> Back to Dashboard
+        </a>
+    </div>
+
+    <!-- User Profile Card -->
+    <div class="col-lg-5">
+        <div class="card h-100">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-person-badge"></i> User Profile</h5>
+                <span class="badge {{ 'badge-disabled' if user.get('disabled') else 'badge-active' }} fs-6">
+                    {{ 'Disabled' if user.get('disabled') else 'Active' }}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="detail-row">
+                    <span class="detail-label">User ID</span>
+                    <span class="detail-value font-monospace">{{ user.id }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Username</span>
+                    <span class="detail-value">{{ user.get('username', '—') }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Display Name</span>
+                    <span class="detail-value">{{ user.get('name', '—') }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Email Addresses</span>
+                    <span class="detail-value">
+                        {% for addr in user.get('addresses', []) %}
+                            <span class="badge bg-secondary me-1">{{ addr }}</span>
+                        {% else %}
+                            —
+                        {% endfor %}
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Created</span>
+                    <span class="detail-value text-muted small">{{ user.get('created', '—') }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Spam Level</span>
+                    <span class="detail-value">{{ user.get('spamLevel', '—') }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Max Recipients / Day</span>
+                    <span class="detail-value">{{ user.get('recipients', '—') }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Max Forwards / Day</span>
+                    <span class="detail-value">{{ user.get('forwards', '—') }}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Has Password Set</span>
+                    <span class="detail-value">
+                        {% if user.get('hasPasswordSet') %}
+                            <i class="bi bi-check-circle-fill text-success"></i> Yes
+                        {% else %}
+                            <i class="bi bi-x-circle-fill text-danger"></i> No
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mailbox / Storage Card -->
+    <div class="col-lg-7">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-hdd-stack"></i> Mailbox Storage</h5>
+            </div>
+            <div class="card-body">
+                {% if mailbox %}
+                    {% set stored = mailbox.get('storageUsed', 0) or 0 %}
+                    {% set quota = mailbox.get('quota', user.get('quota', 1073741824)) or 1073741824 %}
+                    {% set pct = (stored / quota * 100) if quota > 0 else 0 %}
+
+                    <div class="row text-center mb-4">
+                        <div class="col-6">
+                            <h3 class="mb-0">{{ pretty_size(stored) }}</h3>
+                            <small class="text-muted">Used</small>
+                        </div>
+                        <div class="col-6">
+                            <h3 class="mb-0">{{ pretty_size(quota) }}</h3>
+                            <small class="text-muted">Quota</small>
+                        </div>
+                    </div>
+
+                    <div class="progress mb-4" style="height: 20px;">
+                        {% set bar_color = '#dc3545' if pct > 90 else ('#ffc107' if pct > 70 else '#198754') %}
+                        <div class="progress-bar" style="width: {{ pct | round(1) }}%; background: {{ bar_color }};">
+                            {{ pct | round(1) }}%
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <div class="border rounded p-3 text-center">
+                                <h5 class="mb-1">{{ mailbox.get('messages', '—') }}</h5>
+                                <small class="text-muted">Messages</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="border rounded p-3 text-center">
+                                <h5 class="mb-1">{{ mailbox.get('folders', '—') }}</h5>
+                                <small class="text-muted">Folders</small>
+                            </div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="border rounded p-3 text-center">
+                                <h5 class="mb-1">{{ mailbox.get('unseen', '—') }}</h5>
+                                <small class="text-muted">Unseen</small>
+                            </div>
+                        </div>
+                    </div>
+                {% else %}
+                    <div class="empty-state">
+                        <i class="bi bi-hdd-stack"></i>
+                        <h5>Mailbox Data Unavailable</h5>
+                        <p class="small">Could not retrieve mailbox statistics for this user.</p>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

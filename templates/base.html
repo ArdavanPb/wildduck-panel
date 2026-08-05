@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildDuck Admin Panel</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <style>
+        :root {
+            --bs-body-font-size: 0.9rem;
+        }
+        body {
+            background: #f0f2f5;
+        }
+        .navbar {
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .navbar-brand {
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .card {
+            border: 0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+            border-radius: 0.5rem;
+        }
+        .table {
+            font-size: 0.875rem;
+            margin-bottom: 0;
+        }
+        .table thead {
+            background: #f8f9fa;
+            border-bottom: 2px solid #dee2e6;
+        }
+        .table th {
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.75rem;
+            letter-spacing: 0.5px;
+            color: #6c757d;
+        }
+        .badge-active { background-color: #198754; }
+        .badge-disabled { background-color: #dc3545; }
+        .nav-tabs .nav-link {
+            color: #6c757d;
+            font-weight: 500;
+        }
+        .nav-tabs .nav-link.active {
+            color: #0d6efd;
+            font-weight: 600;
+        }
+        .btn-action {
+            padding: 0.2rem 0.5rem;
+            font-size: 0.8rem;
+        }
+        .quota-bar {
+            height: 6px;
+            border-radius: 3px;
+            background: #e9ecef;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .quota-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            transition: width 0.3s;
+        }
+        .toast-container {
+            position: fixed;
+            top: 1rem;
+            right: 1rem;
+            z-index: 1060;
+        }
+        .detail-row {
+            display: flex;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #eee;
+        }
+        .detail-label {
+            width: 180px;
+            font-weight: 600;
+            color: #6c757d;
+            flex-shrink: 0;
+        }
+        .detail-value {
+            flex: 1;
+            word-break: break-all;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #adb5bd;
+        }
+        .empty-state i {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark sticky-top">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="{{ url_for('index') }}">
+            <i class="bi bi-mailbox-flag"></i> WildDuck Panel
+        </a>
+        <div class="d-flex align-items-center gap-2">
+            <a href="{{ url_for('create_user') }}" class="btn btn-success btn-sm">
+                <i class="bi bi-person-plus"></i> New User
+            </a>
+            <span class="navbar-text small text-light me-2 d-none d-md-inline">
+                <i class="bi bi-person-check"></i> {{ session.get('username', '') }}
+            </span>
+            <a href="{{ url_for('logout') }}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-box-arrow-right"></i> Logout
+            </a>
+        </div>
+    </div>
+</nav>
+
+<div class="toast-container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div class="toast align-items-center text-bg-{{ category }} border-0 show" role="alert">
+                <div class="d-flex">
+                    <div class="toast-body">{{ message }}</div>
+                    <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                </div>
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+</div>
+
+<main class="container-fluid py-3">
+    {% if not content %}
+        {% block content %}{% endblock %}
+    {% else %}
+        {{ content | safe }}
+    {% endif %}
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+// Generic confirmation dialog for dangerous actions
+function confirmAction(message) {
+    return confirm(message || 'Are you sure?');
+}
+
+// Toggle a user's enabled/disabled status
+async function toggleUserStatus(userId, btn) {
+    const resp = await fetch('/user/' + userId + '/toggle-status', { method: 'PUT' });
+    const data = await resp.json();
+    if (!resp.ok) {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        return;
+    }
+    if (data.status === 'enabled') {
+        btn.innerHTML = '<i class="bi bi-pause-circle"></i> Disable';
+        btn.classList.remove('btn-success');
+        btn.classList.add('btn-warning');
+        const badge = document.getElementById('status-badge-' + userId);
+        if (badge) {
+            badge.textContent = 'Active';
+            badge.className = 'badge badge-active';
+        }
+    } else {
+        btn.innerHTML = '<i class="bi bi-play-circle"></i> Enable';
+        btn.classList.remove('btn-warning');
+        btn.classList.add('btn-success');
+        const badge = document.getElementById('status-badge-' + userId);
+        if (badge) {
+            badge.textContent = 'Disabled';
+            badge.className = 'badge badge-disabled';
+        }
+    }
+}
+
+// Delete a user
+async function deleteUser(userId, rowElement) {
+    if (!confirmAction('Permanently delete this user? This cannot be undone.')) return;
+    const resp = await fetch('/user/' + userId + '/delete', { method: 'DELETE' });
+    const data = await resp.json();
+    if (!resp.ok) {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        return;
+    }
+    if (rowElement) {
+        rowElement.remove();
+    } else {
+        location.reload();
+    }
+}
+</script>
+
+</body>
+</html>

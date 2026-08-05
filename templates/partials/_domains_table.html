@@ -1,0 +1,30 @@
+{% if domains %}
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Domain</th>
+                <th>Aliases</th>
+                <th>Created</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for d in domains %}
+        <tr>
+            <td class="font-monospace small text-muted">{{ d.id }}</td>
+            <td>{{ d.get('domain', d.get('name', '—')) }}</td>
+            <td>{{ d.get('aliases', 0) }}</td>
+            <td class="text-muted small">{{ d.get('created', '—') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="bi bi-globe2"></i>
+    <h5>No Domains Found</h5>
+    <p class="small">No domains configured on this WildDuck instance.</p>
+</div>
+{% endif %}

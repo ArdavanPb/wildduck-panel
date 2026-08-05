@@ -1,0 +1,49 @@
+{% if addresses %}
+<div class="table-responsive">
+    <table class="table table-hover align-middle">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Address</th>
+                <th>Name</th>
+                <th>Forwards To</th>
+                <th>User</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for a in addresses %}
+        <tr>
+            <td class="font-monospace small text-muted">{{ a.id }}</td>
+            <td>{{ a.get('address', '—') }}</td>
+            <td>{{ a.get('name', '—') }}</td>
+            <td>
+                {% set targets = a.get('targets', a.get('forwards', [])) %}
+                {% if targets is string %}
+                    {{ targets }}
+                {% else %}
+                    {% for t in targets %}
+                        <span class="badge bg-secondary me-1">{{ t }}</span>
+                    {% else %}
+                        <span class="text-muted">—</span>
+                    {% endfor %}
+                {% endif %}
+            </td>
+            <td class="text-muted small">{{ a.get('user', '—') }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% else %}
+<div class="empty-state">
+    <i class="bi bi-at"></i>
+    <h5>No Addresses Found</h5>
+    <p class="small">
+        {% if search_query %}
+            No addresses match "{{ search_query }}".
+        {% else %}
+            No addresses / aliases in the system.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WildDuck Admin — Login</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .login-card {
+            width: 100%;
+            max-width: 420px;
+            border: 0;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+            border-radius: 0.75rem;
+        }
+        .login-header {
+            text-align: center;
+            padding: 2rem 1rem 1rem;
+        }
+        .login-header i {
+            font-size: 2.5rem;
+            color: #0d6efd;
+        }
+        .login-header h4 {
+            margin-top: 0.5rem;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="login-card card">
+    <div class="login-header">
+        <i class="bi bi-mailbox-flag"></i>
+        <h4>WildDuck Panel</h4>
+        <p class="text-muted small mb-0">Sign in to manage your mail server</p>
+    </div>
+    <div class="card-body px-4 pb-4">
+
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show py-2 small" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" style="font-size:0.65rem;"></button>
+            </div>
+            {% endfor %}
+        {% endwith %}
+
+        {% if error %}
+        <div class="alert alert-danger py-2 small">{{ error }}</div>
+        {% endif %}
+
+        <form method="post" action="{{ url_for('login') }}">
+            <input type="hidden" name="next" value="{{ request.args.get('next', '') }}">
+            <div class="mb-3">
+                <label for="username" class="form-label small fw-semibold">Username</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-person"></i></span>
+                    <input type="text" class="form-control" id="username" name="username"
+                           placeholder="Enter username" required autofocus>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label for="password" class="form-label small fw-semibold">Password</label>
+                <div class="input-group">
+                    <span class="input-group-text"><i class="bi bi-lock"></i></span>
+                    <input type="password" class="form-control" id="password" name="password"
+                           placeholder="Enter password" required>
+                </div>
+            </div>
+            <button type="submit" class="btn btn-primary w-100">
+                <i class="bi bi-box-arrow-in-right"></i> Sign In
+            </button>
+        </form>
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
