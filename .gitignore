@@ -20,5 +20,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
+# SQLite databases
+*.db
+*.sqlite
+instance/
+
 # Docker
 docker-compose.override.yml

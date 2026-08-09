@@ -4,6 +4,14 @@ services:
     container_name: wildduck-panel
     ports:
       - "5000:5000"
-    env_file:
-      - .env
+    # Optional: seed the initial API URL and token via environment variables.
+    # After the first startup the values are stored in the SQLite database
+    # and can be changed at any time via the web Settings page.
+    # environment:
+    #   WILDDUCK_API_URL: "http://host.docker.internal:8080"
+    #   WILDDUCK_API_TOKEN: "your-real-token"
+    #   ADMIN_PASSWORD: "your-strong-password"
+    #   FLASK_SECRET_KEY: "your-secret-key"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     restart: unless-stopped
