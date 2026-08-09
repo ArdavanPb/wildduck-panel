@@ -14,8 +14,10 @@ COPY config.py .
 COPY app.py .
 COPY templates/ templates/
 
-# Create a non-root user
-RUN adduser -D -H wildduck
+# Create a non-root user and ensure /app is writable
+RUN adduser -D -H wildduck && \
+    mkdir -p /app/instance && \
+    chown -R wildduck:wildduck /app
 USER wildduck
 
 EXPOSE 5000
