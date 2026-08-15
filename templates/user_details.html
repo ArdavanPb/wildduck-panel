@@ -49,13 +49,17 @@
                     <span class="detail-value">{{ user.get('name', '—') }}</span>
                 </div>
                 <div class="detail-row">
-                    <span class="detail-label">Email Addresses</span>
+                    <span class="detail-label">Email Address</span>
                     <span class="detail-value">
-                        {% for addr in user.get('addresses', []) %}
-                            <span class="badge bg-secondary me-1">{{ addr }}</span>
+                        {% if user.get('address') %}
+                            <span class="badge bg-secondary me-1">{{ user.get('address') }}</span>
+                        {% elif user.get('addresses') %}
+                            {% for addr in user.get('addresses') %}
+                                <span class="badge bg-secondary me-1">{{ addr }}</span>
+                            {% endfor %}
                         {% else %}
                             —
-                        {% endfor %}
+                        {% endif %}
                     </span>
                 </div>
                 <div class="detail-row">
@@ -68,11 +72,11 @@
                 </div>
                 <div class="detail-row">
                     <span class="detail-label">Max Recipients / Day</span>
-                    <span class="detail-value">{{ user.get('recipients', '—') }}</span>
+                    <span class="detail-value">{{ user.get('limits', {}).get('recipients', {}).get('allowed', user.get('recipients', '—')) }}</span>
                 </div>
                 <div class="detail-row">
                     <span class="detail-label">Max Forwards / Day</span>
-                    <span class="detail-value">{{ user.get('forwards', '—') }}</span>
+                    <span class="detail-value">{{ user.get('limits', {}).get('forwards', {}).get('allowed', user.get('forwards', '—')) }}</span>
                 </div>
                 <div class="detail-row">
                     <span class="detail-label">Has Password Set</span>
@@ -95,56 +99,49 @@
                 <h5 class="mb-0"><i class="bi bi-hdd-stack"></i> Mailbox Storage</h5>
             </div>
             <div class="card-body">
-                {% if mailbox %}
-                    {% set stored = mailbox.get('storageUsed', 0) or 0 %}
-                    {% set quota = mailbox.get('quota', user.get('quota', 1073741824)) or 1073741824 %}
-                    {% set pct = (stored / quota * 100) if quota > 0 else 0 %}
+                {% set quota = user.get('limits', {}).get('quota', {}) %}
+                {% set quota_allowed = (quota.get('allowed', 1073741824) or 1073741824) if quota is mapping else (quota or 1073741824) %}
+                {% set stored = (quota.get('used', 0) or 0) if quota is mapping else (user.get('storageUsed', 0) or 0) %}
+                {% set pct = (stored / quota_allowed * 100) if quota_allowed > 0 else 0 %}
 
-                    <div class="row text-center mb-4">
-                        <div class="col-6">
-                            <h3 class="mb-0">{{ pretty_size(stored) }}</h3>
-                            <small class="text-muted">Used</small>
-                        </div>
-                        <div class="col-6">
-                            <h3 class="mb-0">{{ pretty_size(quota) }}</h3>
-                            <small class="text-muted">Quota</small>
-                        </div>
+                <div class="row text-center mb-4">
+                    <div class="col-6">
+                        <h3 class="mb-0">{{ pretty_size(stored) }}</h3>
+                        <small class="text-muted">Used</small>
                     </div>
+                    <div class="col-6">
+                        <h3 class="mb-0">{{ pretty_size(quota_allowed) }}</h3>
+                        <small class="text-muted">Quota</small>
+                    </div>
+                </div>
 
-                    <div class="progress mb-4" style="height: 20px;">
-                        {% set bar_color = '#dc3545' if pct > 90 else ('#ffc107' if pct > 70 else '#198754') %}
-                        <div class="progress-bar" style="width: {{ pct | round(1) }}%; background: {{ bar_color }};">
-                            {{ pct | round(1) }}%
-                        </div>
+                <div class="progress mb-4" style="height: 20px;">
+                    {% set bar_color = '#dc3545' if pct > 90 else ('#ffc107' if pct > 70 else '#198754') %}
+                    <div class="progress-bar" style="width: {{ pct | round(1) }}%; background: {{ bar_color }};">
+                        {{ pct | round(1) }}%
                     </div>
+                </div>
 
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <div class="border rounded p-3 text-center">
-                                <h5 class="mb-1">{{ mailbox.get('messages', '—') }}</h5>
-                                <small class="text-muted">Messages</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="border rounded p-3 text-center">
-                                <h5 class="mb-1">{{ mailbox.get('folders', '—') }}</h5>
-                                <small class="text-muted">Folders</small>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="border rounded p-3 text-center">
-                                <h5 class="mb-1">{{ mailbox.get('unseen', '—') }}</h5>
-                                <small class="text-muted">Unseen</small>
-                            </div>
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 text-center">
+                            <h5 class="mb-1">{{ user.get('limits', {}).get('recipients', {}).get('used', '—') }}</h5>
+                            <small class="text-muted">Recipients (24h)</small>
                         </div>
                     </div>
-                {% else %}
-                    <div class="empty-state">
-                        <i class="bi bi-hdd-stack"></i>
-                        <h5>Mailbox Data Unavailable</h5>
-                        <p class="small">Could not retrieve mailbox statistics for this user.</p>
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 text-center">
+                            <h5 class="mb-1">{{ user.get('limits', {}).get('forwards', {}).get('used', '—') }}</h5>
+                            <small class="text-muted">Forwards (24h)</small>
+                        </div>
                     </div>
-                {% endif %}
+                    <div class="col-md-4">
+                        <div class="border rounded p-3 text-center">
+                            <h5 class="mb-1">{{ user.get('limits', {}).get('filters', {}).get('used', '—') }}</h5>
+                            <small class="text-muted">Filters</small>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

@@ -2,37 +2,30 @@
 
 {% block content %}
 
-{% if api_error %}
-<div class="alert alert-danger alert-dismissible fade show" role="alert">
-    <i class="bi bi-exclamation-triangle"></i> {{ api_error }}
-    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-</div>
-{% endif %}
-
 <div class="card">
     <div class="card-header bg-white border-bottom d-flex flex-wrap align-items-center gap-2 py-2">
         <ul class="nav nav-tabs card-header-tabs flex-grow-1 border-0" role="tablist">
             <li class="nav-item">
-                <a class="nav-link {{ 'active' if tab == 'users' else '' }}" href="{{ url_for('index', tab='users') }}">
+                <a class="nav-link {{ 'active' if tab == 'users' else '' }}" href="{{ url_for('index', tab='users') }}" data-tab="users">
                     <i class="bi bi-people"></i> Users
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link {{ 'active' if tab == 'domains' else '' }}" href="{{ url_for('index', tab='domains') }}">
+                <a class="nav-link {{ 'active' if tab == 'domains' else '' }}" href="{{ url_for('index', tab='domains') }}" data-tab="domains">
                     <i class="bi bi-globe2"></i> Domains
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link {{ 'active' if tab == 'addresses' else '' }}" href="{{ url_for('index', tab='addresses') }}">
+                <a class="nav-link {{ 'active' if tab == 'addresses' else '' }}" href="{{ url_for('index', tab='addresses') }}" data-tab="addresses">
                     <i class="bi bi-at"></i> Addresses / Aliases
                 </a>
             </li>
         </ul>
 
-        <form class="d-flex" method="get" action="{{ url_for('index') }}">
+        <form class="d-flex" method="get" action="{{ url_for('index') }}" id="search-form">
             <input type="hidden" name="tab" value="{{ tab }}">
             <div class="input-group input-group-sm">
-                <input type="text" name="query" class="form-control" placeholder="Search..." value="{{ search_query }}">
+                <input type="text" name="query" class="form-control" placeholder="Search..." value="{{ search_query }}" id="search-input">
                 <button class="btn btn-outline-secondary" type="submit">
                     <i class="bi bi-search"></i>
                 </button>
@@ -45,15 +38,205 @@
         </form>
     </div>
 
-    <div class="card-body p-0">
-        {% if tab == 'users' %}
-            {% include 'partials/_users_table.html' %}
-        {% elif tab == 'domains' %}
-            {% include 'partials/_domains_table.html' %}
-        {% elif tab == 'addresses' %}
-            {% include 'partials/_addresses_table.html' %}
-        {% endif %}
+    <div class="card-body p-0" id="dashboard-content">
+        <div class="d-flex justify-content-center py-5" id="dashboard-spinner">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+        </div>
+        <div id="dashboard-data"></div>
     </div>
 </div>
+
+<script>
+// ── AJAX dashboard loader ────────────────────────────────────────────
+(function() {
+    const dataEl = document.getElementById('dashboard-data');
+    const spinnerEl = document.getElementById('dashboard-spinner');
+    const currentTab = {{ tab | tojson }};
+
+    function showSpinner() {
+        spinnerEl.style.display = '';
+        dataEl.innerHTML = '';
+    }
+
+    function hideSpinner() {
+        spinnerEl.style.display = 'none';
+    }
+
+    function renderUserTable(users) {
+        if (!users || users.length === 0) {
+            const q = document.getElementById('search-input').value;
+            return `<div class="empty-state">
+                <i class="bi bi-inbox"></i>
+                <h5>No Users Found</h5>
+                <p class="small">${q ? 'No users match "' + q + '".' : 'No users in the system. Click <strong>New User</strong> to add one.'}</p>
+            </div>`;
+        }
+        let rows = '';
+        users.forEach(u => {
+            const quotaVal = u.quota;
+            const quota = (quotaVal && typeof quotaVal === 'object') ? (quotaVal.allowed || 1073741824) : (quotaVal || 1073741824);
+            const stored = (quotaVal && typeof quotaVal === 'object') ? (quotaVal.used || 0) : (u.storageUsed || 0);
+            const pct = quota > 0 ? stored / quota * 100 : 0;
+            const pctDisplay = pct.toFixed(1);
+            const barColor = pct > 90 ? '#dc3545' : (pct > 70 ? '#ffc107' : '#198754');
+            const storedMB = (stored / 1048576).toFixed(1);
+            const quotaGB = (quota / 1073741824).toFixed(1);
+            const disabled = u.disabled || false;
+            const statusClass = disabled ? 'badge-disabled' : 'badge-active';
+            const statusText = disabled ? 'Disabled' : 'Active';
+            const toggleClass = disabled ? 'btn-success' : 'btn-warning';
+            const toggleIcon = disabled ? 'bi-play-circle' : 'bi-pause-circle';
+            const toggleLabel = disabled ? 'Enable' : 'Disable';
+            const addrList = u.addresses || (u.address ? [u.address] : []);
+            const addresses = addrList.map(a => '<span class="d-block small">' + a + '</span>').join('') || '<span class="text-muted">' + (u.username || '—') + '</span>';
+            rows += `<tr id="user-row-${u.id}">
+                <td class="font-monospace small text-muted">${u.id}</td>
+                <td>${u.name || '—'}</td>
+                <td>${addresses}</td>
+                <td><span class="badge ${statusClass}" id="status-badge-${u.id}">${statusText}</span></td>
+                <td>
+                    <div class="d-flex justify-content-between small">
+                        <span>${storedMB} MB</span>
+                        <span class="text-muted">${quotaGB} GB</span>
+                    </div>
+                    <div class="quota-bar">
+                        <div class="quota-bar-fill" style="width: ${pctDisplay}%; background: ${barColor};"></div>
+                    </div>
+                </td>
+                <td>
+                    <a href="/user/${u.id}" class="btn btn-sm btn-outline-primary btn-action" title="View Details">
+                        <i class="bi bi-eye"></i>
+                    </a>
+                    <button class="btn btn-sm ${toggleClass} btn-action" onclick="toggleUserStatus('${u.id}', this)" title="${toggleLabel} User">
+                        <i class="${toggleIcon}"></i> ${toggleLabel}
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteUser('${u.id}', document.getElementById('user-row-${u.id}'))" title="Delete User">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>`;
+        });
+        return `<div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead><tr>
+                    <th style="width: 200px;">ID</th><th>Name</th><th>Email</th><th>Status</th><th>Quota Usage</th><th style="width: 200px;">Actions</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table></div>`;
+    }
+
+    function renderDomainTable(domains) {
+        if (!domains || domains.length === 0) {
+            return `<div class="empty-state">
+                <i class="bi bi-globe2"></i>
+                <h5>No Domains Found</h5>
+                <p class="small">No domains configured on this WildDuck instance.</p>
+            </div>`;
+        }
+        let rows = '';
+        domains.forEach(d => {
+            rows += `<tr>
+                <td class="font-monospace small text-muted">${d.id}</td>
+                <td>${d.domain || d.name || '—'}</td>
+                <td>${d.aliases || 0}</td>
+                <td class="text-muted small">${d.created || '—'}</td>
+            </tr>`;
+        });
+        return `<div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead><tr><th>ID</th><th>Domain</th><th>Aliases</th><th>Created</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table></div>`;
+    }
+
+    function renderAddressTable(addresses) {
+        if (!addresses || addresses.length === 0) {
+            const q = document.getElementById('search-input').value;
+            return `<div class="empty-state">
+                <i class="bi bi-at"></i>
+                <h5>No Addresses Found</h5>
+                <p class="small">${q ? 'No addresses match "' + q + '".' : 'No addresses / aliases in the system.'}</p>
+            </div>`;
+        }
+        let rows = '';
+        addresses.forEach(a => {
+            const targets = a.targets || a.forwards || [];
+            const targetHtml = typeof targets === 'string' ? targets
+                : targets.map(t => '<span class="badge bg-secondary me-1">' + t + '</span>').join('') || '<span class="text-muted">—</span>';
+            rows += `<tr>
+                <td class="font-monospace small text-muted">${a.id}</td>
+                <td>${a.address || '—'}</td>
+                <td>${a.name || '—'}</td>
+                <td>${targetHtml}</td>
+                <td class="text-muted small">${a.user || '—'}</td>
+            </tr>`;
+        });
+        return `<div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead><tr><th>ID</th><th>Address</th><th>Name</th><th>Forwards To</th><th>User</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table></div>`;
+    }
+
+    async function loadDashboard() {
+        const tab = document.querySelector('.nav-tabs .nav-link.active')?.dataset?.tab || currentTab;
+        const query = document.getElementById('search-input')?.value || '';
+        showSpinner();
+        try {
+            const resp = await fetch('/api/dashboard?tab=' + tab + '&query=' + encodeURIComponent(query));
+            const json = await resp.json();
+            hideSpinner();
+            if (!resp.ok) {
+                dataEl.innerHTML = '<div class="alert alert-danger m-3">' + (json.error || 'Failed to load data') + '</div>';
+                return;
+            }
+            if (tab === 'users') dataEl.innerHTML = renderUserTable(json.results);
+            else if (tab === 'domains') dataEl.innerHTML = renderDomainTable(json.results);
+            else if (tab === 'addresses') dataEl.innerHTML = renderAddressTable(json.results);
+        } catch (e) {
+            hideSpinner();
+            dataEl.innerHTML = '<div class="alert alert-danger m-3">Network error: ' + e.message + '</div>';
+        }
+    }
+
+    // Load on page init
+    loadDashboard();
+
+    // Tab clicks — navigate via page reload (preserves URL for sharing)
+    // The actual data loading is handled by the server on full page loads
+    // For single-page AJAX: intercept tab clicks
+    document.querySelectorAll('.nav-tabs .nav-link').forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            // Update active tab
+            document.querySelectorAll('.nav-tabs .nav-link').forEach(l => l.classList.remove('active'));
+            this.classList.add('active');
+            // Update hidden tab input
+            document.querySelector('input[name="tab"]').value = this.dataset.tab;
+            // Update URL without reload
+            const url = new URL(window.location);
+            url.searchParams.set('tab', this.dataset.tab);
+            window.history.pushState({}, '', url);
+            // Load data via AJAX
+            loadDashboard();
+        });
+    });
+
+    // Search form — submit via AJAX
+    document.getElementById('search-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        loadDashboard();
+    });
+
+    // Debounced search on input
+    let searchTimeout;
+    document.getElementById('search-input').addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(loadDashboard, 400);
+    });
+})();
+</script>
 
 {% endblock %}

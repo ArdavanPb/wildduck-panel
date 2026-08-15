@@ -3,9 +3,11 @@ import secrets
 import time
 from functools import wraps
 
+from dotenv import load_dotenv
 from flask import (
     Flask,
     flash,
+    g,
     jsonify,
     redirect,
     render_template,
@@ -13,18 +15,33 @@ from flask import (
     session,
     url_for,
 )
+from flask_compress import Compress
 from flask_session import Session
 from flask_sqlalchemy import SQLAlchemy
 from werkzeug.security import check_password_hash, generate_password_hash
 
 import config
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+from cachetools import TTLCache
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 
+# ── Response compression ──────────────────────────────────────────────
+Compress(app)
+
 # ── Database & server-side sessions ────────────────────────────────────
 app.config["SQLALCHEMY_DATABASE_URI"] = config.DATABASE_URI
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "connect_args": {"check_same_thread": False},
+    "pool_pre_ping": True,
+    "pool_recycle": 300,
+}
 db = SQLAlchemy(app)
 app.config["SESSION_TYPE"] = config.SESSION_TYPE
 app.config["SESSION_SQLALCHEMY"] = db
@@ -36,9 +53,35 @@ Session(app)
 ADMIN_USERNAME = config.ADMIN_USERNAME
 ADMIN_PASSWORD_HASH = generate_password_hash(config.ADMIN_PASSWORD)
 
-TIMEOUT = 30
+# ── Connection pool & retry ───────────────────────────────────────────
+TIMEOUT = 10
 MAX_RETRIES = 2
-RETRY_BACKOFF = 1  # seconds
+RETRY_BACKOFF = 0.5  # seconds
+
+API_SESSION = requests.Session()
+RETRY_STRATEGY = Retry(
+    total=MAX_RETRIES,
+    backoff_factor=RETRY_BACKOFF,
+    status_forcelist=[500, 502, 503, 504],
+    allowed_methods=["GET", "HEAD"],
+)
+ADAPTER = HTTPAdapter(
+    max_retries=RETRY_STRATEGY,
+    pool_connections=10,
+    pool_maxsize=20,
+    pool_block=False,
+)
+API_SESSION.mount("http://", ADAPTER)
+API_SESSION.mount("https://", ADAPTER)
+
+# ── Response cache (TTL in seconds) ───────────────────────────────────
+API_CACHE = TTLCache(maxsize=256, ttl=30)          # default 30s
+CACHE_TTL = {
+    "/users": 30,
+    "/domains": 300,
+    "/addresses": 60,
+}
+QUERY_CACHE = TTLCache(maxsize=128, ttl=30)         # search queries
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -70,40 +113,57 @@ def get_api_settings():
     return s.api_url.rstrip("/"), s.api_token
 
 
-def api_request(method, path, json_data=None, params=None):
+def api_request(method, path, json_data=None, params=None, timeout=None, max_retries=None, use_cache=True):
     """Make an authenticated request to the WildDuck REST API.
 
     Reads the current API URL and token from the database on every call.
-    Retries once on transient errors (timeout, connection).
+    Uses connection pooling for performance and an in-memory TTL cache.
     """
+    if timeout is None:
+        timeout = TIMEOUT
+
+    # ── cache check (GET only, non-query, when cache enabled) ─────────
+    cache_key = None
+    if use_cache and method == "GET" and not params:
+        cache_key = path
+        data = API_CACHE.get(cache_key)
+        if data is not None:
+            return data, None
+    elif use_cache and method == "GET" and params:
+        cache_key = f"{path}?{frozenset(params.items())}"
+        data = QUERY_CACHE.get(cache_key)
+        if data is not None:
+            return data, None
+
     api_url, api_token = get_api_settings()
     url = f"{api_url}{path}"
     headers = {
         "X-Access-Token": api_token,
         "Content-Type": "application/json",
+        "Accept-Encoding": "gzip, deflate",
     }
 
     last_error = None
-    for attempt in range(1 + MAX_RETRIES):
+    for attempt in range(1 + max_retries if max_retries is not None else 1 + MAX_RETRIES):
         try:
-            resp = requests.request(
+            resp = API_SESSION.request(
                 method,
                 url,
                 headers=headers,
                 json=json_data,
                 params=params,
-                timeout=TIMEOUT,
+                timeout=timeout,
             )
-            break  # success — exit retry loop
+            break
         except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
             last_error = e
-            if attempt < MAX_RETRIES:
-                time.sleep(RETRY_BACKOFF * (attempt + 1))
+            if attempt < (max_retries if max_retries is not None else MAX_RETRIES):
+                backoff = RETRY_BACKOFF * (attempt + 1)
+                time.sleep(backoff)
                 continue
         except requests.exceptions.RequestException as e:
             return None, f"API request failed: {e}"
     else:
-        # All retries exhausted
         if isinstance(last_error, requests.exceptions.Timeout):
             return None, f"API request timed out ({url})"
         return None, f"Cannot connect to WildDuck API at {api_url}"
@@ -121,20 +181,51 @@ def api_request(method, path, json_data=None, params=None):
         return None, f"API error ({resp.status_code}): {detail}"
 
     try:
-        return resp.json(), None
+        data = resp.json()
     except Exception:
         return None, "Invalid JSON response from API"
 
+    # ── populate cache ────────────────────────────────────────────────
+    if cache_key and method == "GET":
+        cache = QUERY_CACHE if params else API_CACHE
+        ttl = CACHE_TTL.get(path, 30)
+        cache[cache_key] = data
+
+    return data, None
+
+
+def invalidate_cache(path_prefix=None):
+    """Clear relevant cache entries after mutations.
+
+    Call after any POST/PUT/DELETE that changes data.
+    """
+    if path_prefix is None:
+        API_CACHE.clear()
+        QUERY_CACHE.clear()
+    else:
+        for key in list(API_CACHE.keys()):
+            if key.startswith(path_prefix):
+                del API_CACHE[key]
+        for key in list(QUERY_CACHE.keys()):
+            if key.startswith(path_prefix):
+                del QUERY_CACHE[key]
+
 
 def init_db():
-    """Create tables and seed the default settings row (if missing).
+    """Create tables, enable WAL mode, and seed the default settings row.
 
-    Called once at startup.  The initial api_url can be seeded from the
+    Called once at startup. The initial api_url can be seeded from the
     WILDDUCK_API_URL environment variable so that Docker users don't have
     to visit the Settings page just to fix the default 127.0.0.1 address.
     """
     with app.app_context():
         db.create_all()
+        # ── SQLite performance: WAL mode for better concurrency ────────
+        db.session.execute(db.text("PRAGMA journal_mode=WAL"))
+        db.session.execute(db.text("PRAGMA synchronous=NORMAL"))
+        db.session.execute(db.text("PRAGMA cache_size=-8000"))
+        db.session.execute(db.text("PRAGMA temp_store=MEMORY"))
+        db.session.commit()
         if db.session.get(Setting, 1) is None:
             default_url = os.environ.get(
                 "WILDDUCK_API_URL", "http://127.0.0.1:8080"
@@ -158,6 +249,34 @@ def login_required(f):
         return f(*args, **kwargs)
 
     return decorated
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Middleware: request timing & session cleanup
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.before_request
+def _start_timer():
+    g.start_time = time.time()
+
+
+@app.after_request
+def _log_slow_requests(response):
+    elapsed = time.time() - getattr(g, "start_time", time.time())
+    if elapsed > 2.0:
+        app.logger.warning(
+            "Slow request: %s %s — %.2fs",
+            request.method,
+            request.path,
+            elapsed,
+        )
+    return response
+
+
+@app.teardown_appcontext
+def _cleanup_db(exception=None):
+    """Ensure SQLAlchemy sessions are removed after each request."""
+    db.session.remove()
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -205,50 +324,10 @@ def index():
     tab = request.args.get("tab", "users")
     search_query = request.args.get("query", "").strip()
 
-    users = []
-    domains = []
-    addresses = []
-    api_error = None
-
-    if tab == "users":
-        params = {}
-        if search_query:
-            params["query"] = search_query
-        data, err = api_request("GET", "/users", params=params)
-        if err:
-            api_error = err
-        elif isinstance(data, dict):
-            users = data.get("results", data.get("users", []))
-        elif isinstance(data, list):
-            users = data
-    elif tab == "domains":
-        data, err = api_request("GET", "/domains")
-        if err:
-            api_error = err
-        elif isinstance(data, dict):
-            domains = data.get("results", data.get("domains", []))
-        elif isinstance(data, list):
-            domains = data
-    elif tab == "addresses":
-        params = {}
-        if search_query:
-            params["query"] = search_query
-        data, err = api_request("GET", "/addresses", params=params)
-        if err:
-            api_error = err
-        elif isinstance(data, dict):
-            addresses = data.get("results", data.get("addresses", []))
-        elif isinstance(data, list):
-            addresses = data
-
     return render_template(
         "index.html",
         tab=tab,
         search_query=search_query,
-        users=users,
-        domains=domains,
-        addresses=addresses,
-        api_error=api_error,
     )
 
 
@@ -303,6 +382,8 @@ def create_user():
         flash(f"Failed to create user: {err}", "danger")
         return render_template("create_user.html"), 400
 
+    invalidate_cache("/users")
+
     user_id = result.get("id") if isinstance(result, dict) else None
     if user_id:
         flash(
@@ -327,12 +408,9 @@ def user_details(user_id):
         flash(f"Failed to fetch user details: {err}", "danger")
         return redirect(url_for("index"))
 
-    mailbox, _ = api_request("GET", f"/users/{user_id}/mailbox")
-
     return render_template(
         "user_details.html",
         user=user,
-        mailbox=mailbox,
     )
 
 
@@ -354,6 +432,8 @@ def toggle_user_status(user_id):
     if err:
         return jsonify({"error": f"Failed to update user: {err}"}), 400
 
+    invalidate_cache("/users")
+
     new_status = "disabled" if payload["disabled"] else "enabled"
     return jsonify({"status": new_status, "disabled": payload["disabled"]})
 
@@ -368,6 +448,7 @@ def delete_user(user_id):
     _, err = api_request("DELETE", f"/users/{user_id}")
     if err:
         return jsonify({"error": f"Failed to delete user: {err}"}), 400
+    invalidate_cache("/users")
     return jsonify({"status": "deleted"})
 
 
@@ -423,23 +504,111 @@ def settings():
             setting.api_url = new_url
             setting.api_token = new_token
         db.session.commit()
+        invalidate_cache()
         flash("Settings saved successfully.", "success")
 
-    # ── Connectivity test (runs on "save" and "test" actions) ──────────
-    _, err = api_request("GET", "/")
-    if err:
-        flash(
-            f"Connection test failed: {err}",
-            "warning",
-        )
-    else:
-        test_url = new_url if action == "save" else (setting.api_url if setting else new_url)
-        flash(
-            f"Successfully connected to WildDuck API at {test_url}.",
-            "success",
-        )
+    # ── Connectivity test ──────────────────────────────────────────────
+    if action in ("save", "test"):
+        test_url = new_url.rstrip("/")
+        test_token = new_token
+        try:
+            resp = requests.get(
+                f"{test_url}/",
+                headers={"X-Access-Token": test_token},
+                timeout=5,
+            )
+            if resp.ok:
+                flash(
+                    f"Successfully connected to WildDuck API at {test_url}.",
+                    "success",
+                )
+            else:
+                flash(
+                    f"Connection test returned HTTP {resp.status_code}.",
+                    "warning",
+                )
+        except requests.exceptions.Timeout:
+            flash(
+                f"Connection test timed out for {test_url}.",
+                "danger",
+            )
+        except requests.exceptions.ConnectionError:
+            flash(
+                f"Cannot connect to WildDuck API at {test_url}.",
+                "danger",
+            )
+        except requests.exceptions.RequestException as e:
+            flash(f"Connection test failed: {e}", "danger")
 
     return redirect(url_for("settings"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  AJAX dashboard data endpoint
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/api/dashboard")
+@login_required
+def api_dashboard():
+    """Return dashboard data as JSON for AJAX-based loading."""
+    tab = request.args.get("tab", "users")
+    search_query = request.args.get("query", "").strip()
+
+    if tab == "users":
+        params = {}
+        if search_query:
+            params["query"] = search_query
+        data, err = api_request("GET", "/users", params=params)
+    elif tab == "domains":
+        data, err = api_request("GET", "/domains")
+    elif tab == "addresses":
+        params = {}
+        if search_query:
+            params["query"] = search_query
+        data, err = api_request("GET", "/addresses", params=params)
+    else:
+        return jsonify({"error": "Invalid tab"}), 400
+
+    if err:
+        return jsonify({"error": err}), 502
+
+    if isinstance(data, dict):
+        results = data.get("results", data.get("users", data.get("domains", data.get("addresses", []))))
+    elif isinstance(data, list):
+        results = data
+    else:
+        results = []
+
+    return jsonify({"tab": tab, "results": results, "total": len(results)})
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Health check
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/health")
+def health():
+    """Lightweight health check — also tests API connectivity."""
+    t0 = time.time()
+    _, err = api_request("GET", "/", timeout=3, max_retries=0, use_cache=False)
+    api_ms = round((time.time() - t0) * 1000)
+    return jsonify({
+        "status": "ok" if not err else "degraded",
+        "api_connect_ms": api_ms,
+        "api_error": err,
+    })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Cache control (manual invalidation)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/admin/clear-cache", methods=["POST"])
+@login_required
+def clear_cache():
+    invalidate_cache()
+    flash("API cache cleared.", "info")
+    return redirect(request.referrer or url_for("index"))
 
 
 # ═══════════════════════════════════════════════════════════════════════════

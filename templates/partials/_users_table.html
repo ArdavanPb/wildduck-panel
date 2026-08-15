@@ -13,19 +13,24 @@
         </thead>
         <tbody>
         {% for u in users %}
-        {% set stored = u.get('storageUsed', 0) or 0 %}
         {% set quota = u.get('quota', 1073741824) or 1073741824 %}
-        {% set pct = (stored / quota * 100) if quota > 0 else 0 %}
+        {% set quota_allowed = (quota.get('allowed', 1073741824) or 1073741824) if quota is mapping else quota %}
+        {% set stored = (quota.get('used', 0) or 0) if quota is mapping else (u.get('storageUsed', 0) or 0) %}
+        {% set pct = (stored / quota_allowed * 100) if quota_allowed > 0 else 0 %}
         {% set pct_display = pct | round(1) %}
         <tr id="user-row-{{ u.id }}">
             <td class="font-monospace small text-muted">{{ u.id }}</td>
             <td>{{ u.name or '—' }}</td>
             <td>
-                {% for addr in u.get('addresses', []) %}
-                    <span class="d-block small">{{ addr }}</span>
+                {% if u.get('addresses') %}
+                    {% for addr in u.get('addresses') %}
+                        <span class="d-block small">{{ addr }}</span>
+                    {% endfor %}
+                {% elif u.get('address') %}
+                    <span class="d-block small">{{ u.get('address') }}</span>
                 {% else %}
                     <span class="text-muted">{{ u.get('username', '—') }}</span>
-                {% endfor %}
+                {% endif %}
             </td>
             <td>
                 {% if u.get('disabled') %}
@@ -37,7 +42,7 @@
             <td>
                 <div class="d-flex justify-content-between small">
                     <span>{{ (stored / 1048576) | round(1) }} MB</span>
-                    <span class="text-muted">{{ (quota / 1073741824) | round(1) }} GB</span>
+                    <span class="text-muted">{{ (quota_allowed / 1073741824) | round(1) }} GB</span>
                 </div>
                 {% set bar_color = '#dc3545' if pct > 90 else ('#ffc107' if pct > 70 else '#198754') %}
                 <div class="quota-bar">
