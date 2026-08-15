@@ -555,14 +555,14 @@ def api_dashboard():
     search_query = request.args.get("query", "").strip()
 
     if tab == "users":
-        params = {}
+        params = {"limit": 250}
         if search_query:
             params["query"] = search_query
         data, err = api_request("GET", "/users", params=params)
     elif tab == "domains":
         data, err = api_request("GET", "/domains")
     elif tab == "addresses":
-        params = {}
+        params = {"limit": 250}
         if search_query:
             params["query"] = search_query
         data, err = api_request("GET", "/addresses", params=params)
