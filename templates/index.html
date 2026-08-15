@@ -109,6 +109,9 @@
                     <a href="/user/${u.id}" class="btn btn-sm btn-outline-primary btn-action" title="View Details">
                         <i class="bi bi-eye"></i>
                     </a>
+                    <a href="/user/${u.id}/edit" class="btn btn-sm btn-outline-info btn-action" title="Edit User">
+                        <i class="bi bi-pencil-square"></i>
+                    </a>
                     <button class="btn btn-sm ${toggleClass} btn-action" onclick="toggleUserStatus('${u.id}', this)" title="${toggleLabel} User">
                         <i class="${toggleIcon}"></i> ${toggleLabel}
                     </button>

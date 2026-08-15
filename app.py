@@ -375,7 +375,10 @@ def create_user():
     except ValueError:
         payload["forwards"] = 2000
     if spam_level:
-        payload["spamLevel"] = spam_level
+        try:
+            payload["spamLevel"] = int(spam_level)
+        except ValueError:
+            pass
 
     result, err = api_request("POST", "/users", json_data=payload)
     if err:
@@ -412,6 +415,68 @@ def user_details(user_id):
         "user_details.html",
         user=user,
     )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Edit user
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/user/<user_id>/edit", methods=["GET", "POST"])
+@login_required
+def edit_user(user_id):
+    user, err = api_request("GET", f"/users/{user_id}")
+    if err:
+        flash(f"Failed to fetch user: {err}", "danger")
+        return redirect(url_for("index"))
+
+    if request.method == "GET":
+        return render_template("edit_user.html", user=user)
+
+    name = request.form.get("name", "").strip()
+    password = request.form.get("password", "")
+    quota = request.form.get("quota", "").strip()
+    recipients = request.form.get("recipients", "").strip()
+    forwards = request.form.get("forwards", "").strip()
+    spam_level = request.form.get("spam_level", "").strip()
+
+    payload = {}
+    if name:
+        payload["name"] = name
+    if password:
+        payload["password"] = password
+    if quota:
+        try:
+            payload["quota"] = int(quota)
+        except ValueError:
+            pass
+    if recipients:
+        try:
+            payload["recipients"] = int(recipients)
+        except ValueError:
+            pass
+    if forwards:
+        try:
+            payload["forwards"] = int(forwards)
+        except ValueError:
+            pass
+    if spam_level:
+        try:
+            payload["spamLevel"] = int(spam_level)
+        except ValueError:
+            pass
+
+    if not payload:
+        flash("No changes to save.", "info")
+        return redirect(url_for("user_details", user_id=user_id))
+
+    _, err = api_request("PUT", f"/users/{user_id}", json_data=payload)
+    if err:
+        flash(f"Failed to update user: {err}", "danger")
+        return render_template("edit_user.html", user=user), 400
+
+    invalidate_cache("/users")
+    flash("User updated successfully.", "success")
+    return redirect(url_for("user_details", user_id=user_id))
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -2,52 +2,50 @@
 
 {% block content %}
 
+{% set quota_allowed = user.get('limits', {}).get('quota', {}).get('allowed', 1073741824) %}
+{% set recipients_allowed = user.get('limits', {}).get('recipients', {}).get('allowed', 2000) %}
+{% set forwards_allowed = user.get('limits', {}).get('forwards', {}).get('allowed', 2000) %}
+{% set spam_level = user.get('spamLevel', 50) %}
+
 <div class="row justify-content-center">
     <div class="col-lg-6 col-md-8">
         <div class="card">
-            <div class="card-header bg-white">
-                <h5 class="mb-0"><i class="bi bi-person-plus"></i> Create New User</h5>
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="bi bi-pencil-square"></i> Edit User</h5>
+                <span class="text-muted small font-monospace">{{ user.get('username', user.id) }}</span>
             </div>
             <div class="card-body">
-                <form method="post" action="{{ url_for('create_user') }}">
+                <form method="post" action="{{ url_for('edit_user', user_id=user.id) }}">
                     <div class="mb-3">
-                        <label for="username" class="form-label">Username <span class="text-danger">*</span></label>
-                        <input type="text" class="form-control" id="username" name="username"
-                               placeholder="e.g. user@domain.com" required>
-                        <div class="form-text">The user login identifier (typically the primary email address).</div>
-                    </div>
-
-                    <div class="mb-3">
-                        <label for="address" class="form-label">Email Address</label>
-                        <input type="email" class="form-control" id="address" name="address"
-                               placeholder="e.g. user@example.com">
-                        <div class="form-text">Primary email address for this user.</div>
+                        <label class="form-label">Username</label>
+                        <input type="text" class="form-control" value="{{ user.get('username', '—') }}" disabled>
+                        <div class="form-text">Username cannot be changed.</div>
                     </div>
 
                     <div class="mb-3">
                         <label for="name" class="form-label">Display Name</label>
                         <input type="text" class="form-control" id="name" name="name"
-                               placeholder="e.g. John Doe">
+                               value="{{ user.get('name', '') }}" placeholder="e.g. John Doe">
                     </div>
 
                     <div class="mb-3">
-                        <label for="password" class="form-label">Password <span class="text-danger">*</span></label>
+                        <label for="password" class="form-label">New Password</label>
                         <input type="password" class="form-control" id="password" name="password"
-                               placeholder="Enter a strong password" required minlength="8">
-                        <div class="form-text">Minimum 8 characters.</div>
+                               placeholder="Leave blank to keep current password" minlength="8">
+                        <div class="form-text">Minimum 8 characters. Leave empty to keep the existing password.</div>
                     </div>
 
                     <div class="row g-3 mb-3">
                         <div class="col-md-6">
                             <label for="quota" class="form-label">Storage Quota (bytes)</label>
                             <input type="number" class="form-control" id="quota" name="quota"
-                                   value="1073741824" step="1" min="1">
-                            <div class="form-text">Default: 1 GB (1073741824 bytes)</div>
+                                   value="{{ quota_allowed }}" step="1" min="0">
+                            <div class="form-text">1 GB = 1073741824 bytes</div>
                         </div>
                         <div class="col-md-6">
                             <label for="spam_level" class="form-label">Spam Level (0–100)</label>
                             <input type="number" class="form-control" id="spam_level" name="spam_level"
-                                   value="50" step="1" min="0" max="100">
+                                   value="{{ spam_level }}" step="1" min="0" max="100">
                             <div class="form-text">0 = most aggressive, 100 = no filtering.</div>
                         </div>
                     </div>
@@ -56,20 +54,20 @@
                         <div class="col-md-6">
                             <label for="recipients" class="form-label">Max Recipients / Day</label>
                             <input type="number" class="form-control" id="recipients" name="recipients"
-                                   value="2000" step="1" min="0">
+                                   value="{{ recipients_allowed }}" step="1" min="0">
                         </div>
                         <div class="col-md-6">
                             <label for="forwards" class="form-label">Max Forwards / Day</label>
                             <input type="number" class="form-control" id="forwards" name="forwards"
-                                   value="2000" step="1" min="0">
+                                   value="{{ forwards_allowed }}" step="1" min="0">
                         </div>
                     </div>
 
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
-                            <i class="bi bi-check-lg"></i> Create User
+                            <i class="bi bi-check-lg"></i> Save Changes
                         </button>
-                        <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Cancel</a>
+                        <a href="{{ url_for('user_details', user_id=user.id) }}" class="btn btn-outline-secondary">Cancel</a>
                     </div>
                 </form>
             </div>
