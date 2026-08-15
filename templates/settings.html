@@ -96,6 +96,40 @@
         <div class="card mt-3">
             <div class="card-header bg-white">
                 <h5 class="card-title mb-0">
+                    <i class="bi bi-key"></i> Change Admin Password
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Change the password used to log in to this panel.
+                </p>
+                <form method="POST" action="{{ url_for('change_admin_password') }}">
+                    <div class="mb-3">
+                        <label for="current_password" class="form-label fw-semibold">Current Password</label>
+                        <input type="password" class="form-control" id="current_password"
+                               name="current_password" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="new_password" class="form-label fw-semibold">New Password</label>
+                        <input type="password" class="form-control" id="new_password"
+                               name="new_password" required minlength="8">
+                        <div class="form-text">Minimum 8 characters.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="confirm_password" class="form-label fw-semibold">Confirm New Password</label>
+                        <input type="password" class="form-control" id="confirm_password"
+                               name="confirm_password" required minlength="8">
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-key"></i> Update Password
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header bg-white">
+                <h5 class="card-title mb-0">
                     <i class="bi bi-info-circle"></i> Deployment Notes
                 </h5>
             </div>

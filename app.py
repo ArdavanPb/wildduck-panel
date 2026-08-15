@@ -49,9 +49,8 @@ app.config["SESSION_PERMANENT"] = config.SESSION_PERMANENT
 app.config["SESSION_USE_SIGNER"] = config.SESSION_USE_SIGNER
 Session(app)
 
-# ── Admin credentials (hashed at startup) ─────────────────────────────
+# ── Admin credentials ─────────────────────────────────────────────────
 ADMIN_USERNAME = config.ADMIN_USERNAME
-ADMIN_PASSWORD_HASH = generate_password_hash(config.ADMIN_PASSWORD)
 
 # ── Connection pool & retry ───────────────────────────────────────────
 TIMEOUT = 10
@@ -96,11 +95,23 @@ class Setting(db.Model):
         db.String(512), nullable=False, default="http://127.0.0.1:8080"
     )
     api_token = db.Column(db.String(512), nullable=False, default="")
+    admin_password_hash = db.Column(db.String(255), nullable=True)
 
 
 # ═══════════════════════════════════════════════════════════════════════════
 #  Helpers
 # ═══════════════════════════════════════════════════════════════════════════
+
+def get_admin_password_hash():
+    """Return the current admin password hash from the database.
+
+    Falls back to the ADMIN_PASSWORD environment variable if the hash has
+    not been persisted yet (e.g. before first init or migration).
+    """
+    s = db.session.get(Setting, 1)
+    if s is not None and s.admin_password_hash:
+        return s.admin_password_hash
+    return generate_password_hash(config.ADMIN_PASSWORD)
 
 def get_api_settings():
     """Return (api_url, api_token) from the database.
@@ -226,13 +237,39 @@ def init_db():
         db.session.execute(db.text("PRAGMA cache_size=-8000"))
         db.session.execute(db.text("PRAGMA temp_store=MEMORY"))
         db.session.commit()
-        if db.session.get(Setting, 1) is None:
+
+        # ── Migration: add admin_password_hash column if missing ────────
+        columns = [
+            row[1]
+            for row in db.session.execute(db.text("PRAGMA table_info(setting)"))
+        ]
+        if "admin_password_hash" not in columns:
+            db.session.execute(
+                db.text(
+                    "ALTER TABLE setting "
+                    "ADD COLUMN admin_password_hash VARCHAR(255)"
+                )
+            )
+            db.session.commit()
+
+        setting = db.session.get(Setting, 1)
+        if setting is None:
             default_url = os.environ.get(
                 "WILDDUCK_API_URL", "http://127.0.0.1:8080"
             )
             default_token = os.environ.get("WILDDUCK_API_TOKEN", "")
-            db.session.add(
-                Setting(api_url=default_url, api_token=default_token)
+            setting = Setting(
+                api_url=default_url,
+                api_token=default_token,
+                admin_password_hash=generate_password_hash(
+                    config.ADMIN_PASSWORD
+                ),
+            )
+            db.session.add(setting)
+            db.session.commit()
+        elif not setting.admin_password_hash:
+            setting.admin_password_hash = generate_password_hash(
+                config.ADMIN_PASSWORD
             )
             db.session.commit()
 
@@ -293,7 +330,7 @@ def login():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         if username == ADMIN_USERNAME and check_password_hash(
-            ADMIN_PASSWORD_HASH, password
+            get_admin_password_hash(), password
         ):
             session["logged_in"] = True
             session["username"] = username
@@ -605,6 +642,40 @@ def settings():
         except requests.exceptions.RequestException as e:
             flash(f"Connection test failed: {e}", "danger")
 
+    return redirect(url_for("settings"))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  Change admin password
+# ═══════════════════════════════════════════════════════════════════════════
+
+@app.route("/settings/password", methods=["POST"])
+@login_required
+def change_admin_password():
+    current = request.form.get("current_password", "")
+    new_password = request.form.get("new_password", "")
+    confirm = request.form.get("confirm_password", "")
+
+    if not check_password_hash(get_admin_password_hash(), current):
+        flash("Current password is incorrect.", "danger")
+        return redirect(url_for("settings"))
+
+    if len(new_password) < 8:
+        flash("New password must be at least 8 characters.", "danger")
+        return redirect(url_for("settings"))
+
+    if new_password != confirm:
+        flash("New passwords do not match.", "danger")
+        return redirect(url_for("settings"))
+
+    setting = db.session.get(Setting, 1)
+    if setting is None:
+        setting = Setting(api_url="http://127.0.0.1:8080", api_token="")
+        db.session.add(setting)
+    setting.admin_password_hash = generate_password_hash(new_password)
+    db.session.commit()
+
+    flash("Admin password updated successfully.", "success")
     return redirect(url_for("settings"))
 
 
