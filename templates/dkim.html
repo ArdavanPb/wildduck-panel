@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="row g-3">
+    <div class="col-lg-5">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-key"></i> Generate DKIM Key</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('dkim') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="mb-3">
+                        <label for="domain" class="form-label">Domain <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="domain" name="domain"
+                               placeholder="e.g. example.com" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="selector" class="form-label">Selector</label>
+                        <input type="text" class="form-control" id="selector" name="selector"
+                               value="default" placeholder="default">
+                        <div class="form-text">DKIM selector, defaults to "default".</div>
+                    </div>
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-lightning-charge"></i> Generate Key
+                    </button>
+                </form>
+
+                {% if generated and generated.get('dnsTxt') %}
+                <hr>
+                <h6 class="text-success"><i class="bi bi-check-circle"></i> Publish this DNS record:</h6>
+                <dl class="small mb-0">
+                    <dt>Type</dt><dd>TXT</dd>
+                    <dt>Name</dt><dd><code>{{ generated.dnsTxt.name }}</code></dd>
+                    <dt>Value</dt><dd><code class="d-block text-break">{{ generated.dnsTxt.value }}</code></dd>
+                </dl>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="col-lg-7">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-shield-lock"></i> DKIM Keys</h5>
+            </div>
+            <div class="card-body p-0">
+                {% if dkim_keys %}
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle">
+                        <thead>
+                            <tr>
+                                <th>Domain</th>
+                                <th>Selector</th>
+                                <th>Fingerprint</th>
+                                <th>Created</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                        {% for k in dkim_keys %}
+                        <tr>
+                            <td>{{ k.get('domain', '—') }}</td>
+                            <td>{{ k.get('selector', '—') }}</td>
+                            <td class="font-monospace small text-muted">{{ k.get('fingerprint', '—') }}</td>
+                            <td class="text-muted small">{{ k.get('created', '—') }}</td>
+                            <td class="text-end">
+                                <a href="{{ url_for('dkim_details', dkim_id=k.id) }}"
+                                   class="btn btn-sm btn-outline-primary btn-action" title="View DNS record">
+                                    <i class="bi bi-eye"></i>
+                                </a>
+                                <form method="post" action="{{ url_for('delete_dkim', dkim_id=k.id) }}" class="d-inline"
+                                      onsubmit="return confirmAction('Delete this DKIM key?');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                                    <button class="btn btn-sm btn-outline-danger btn-action" type="submit" title="Delete">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <i class="bi bi-shield-lock"></i>
+                    <h5>No DKIM Keys</h5>
+                    <p class="small">Generate a key to sign outgoing mail for a domain.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

@@ -48,12 +48,52 @@
     </div>
 </div>
 
+<!-- New domain alias modal -->
+<div class="modal fade" id="newDomainModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog">
+        <form method="post" action="{{ url_for('create_domain_alias') }}" class="modal-content">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-plus-lg"></i> Add Domain Alias</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label for="alias-domain" class="form-label">Domain <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="alias-domain" name="domain"
+                           placeholder="e.g. example.com" required>
+                    <div class="form-text">The primary domain the alias maps to.</div>
+                </div>
+                <div class="mb-0">
+                    <label for="alias-alias" class="form-label">Alias <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control" id="alias-alias" name="alias"
+                           placeholder="e.g. example.org" required>
+                    <div class="form-text">Mail sent to user@alias is delivered to user@domain.</div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-check-lg"></i> Add Alias</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 <script>
-// ── AJAX dashboard loader ────────────────────────────────────────────
+// ── AJAX dashboard loader with sorting & pagination ──────────────────
 (function() {
     const dataEl = document.getElementById('dashboard-data');
     const spinnerEl = document.getElementById('dashboard-spinner');
     const currentTab = {{ tab | tojson }};
+
+    const state = {
+        results: [],
+        total: 0,
+        next: null,
+        previous: null,
+        sortKey: null,
+        sortDir: 1,   // 1 = ascending, -1 = descending
+    };
 
     function showSpinner() {
         spinnerEl.style.display = '';
@@ -62,6 +102,54 @@
 
     function hideSpinner() {
         spinnerEl.style.display = 'none';
+    }
+
+    function activeTab() {
+        return document.querySelector('.nav-tabs .nav-link.active')?.dataset?.tab || currentTab;
+    }
+
+    function sortArrow(key) {
+        if (state.sortKey !== key) return '';
+        return state.sortDir === 1 ? ' <i class="bi bi-arrow-up"></i>' : ' <i class="bi bi-arrow-down"></i>';
+    }
+
+    function getSortValue(item, key) {
+        switch (key) {
+            case 'email':
+                return (item.addresses && item.addresses[0]) || item.address || item.username || '';
+            case 'quota': {
+                const q = item.quota;
+                const allowed = (q && typeof q === 'object') ? (q.allowed || 0) : (q || 0);
+                const used = (q && typeof q === 'object') ? (q.used || 0) : (item.storageUsed || 0);
+                return allowed ? used / allowed : 0;
+            }
+            case 'status':
+                return item.disabled ? 1 : 0;
+            case 'type':
+                return item.forwarded === true ? 1 : 0;
+            case 'aliases':
+                return (item.aliases || []).length;
+            case 'dkim':
+                return item.dkim ? 1 : 0;
+            case 'targets':
+                return (item.targets || []).join(', ');
+            default:
+                return item[key] == null ? '' : item[key];
+        }
+    }
+
+    function sortedResults() {
+        if (!state.sortKey) return state.results;
+        const key = state.sortKey;
+        const dir = state.sortDir;
+        return state.results.slice().sort(function(a, b) {
+            const va = getSortValue(a, key);
+            const vb = getSortValue(b, key);
+            if (typeof va === 'string' || typeof vb === 'string') {
+                return String(va).localeCompare(String(vb)) * dir;
+            }
+            return (va - vb) * dir;
+        });
     }
 
     function renderUserTable(users) {
@@ -124,7 +212,12 @@
         return `<div class="table-responsive">
             <table class="table table-hover align-middle">
                 <thead><tr>
-                    <th style="width: 200px;">ID</th><th>Name</th><th>Email</th><th>Status</th><th>Quota Usage</th><th style="width: 200px;">Actions</th>
+                    <th style="width: 200px;" data-sort="id">ID${sortArrow('id')}</th>
+                    <th data-sort="name">Name${sortArrow('name')}</th>
+                    <th data-sort="email">Email${sortArrow('email')}</th>
+                    <th data-sort="status">Status${sortArrow('status')}</th>
+                    <th data-sort="quota">Quota Usage${sortArrow('quota')}</th>
+                    <th style="width: 200px;">Actions</th>
                 </tr></thead>
                 <tbody>${rows}</tbody>
             </table></div>`;
@@ -135,21 +228,43 @@
             return `<div class="empty-state">
                 <i class="bi bi-globe2"></i>
                 <h5>No Domains Found</h5>
-                <p class="small">No domains configured on this WildDuck instance.</p>
+                <p class="small">Add an address or a domain alias to register a domain.</p>
             </div>`;
         }
         let rows = '';
         domains.forEach(d => {
+            const enc = encodeURIComponent(d.domain);
+            const aliasBadge = d.is_alias ? ' <span class="badge bg-secondary">alias</span>' : '';
+            const dkimBadge = d.dkim
+                ? '<span class="badge badge-active">DKIM · ' + d.dkim.selector + '</span>'
+                : '<span class="badge bg-secondary">No DKIM</span>';
+            const aliases = (d.aliases || []).map(a =>
+                '<span class="badge bg-light text-dark border me-1">' + a.alias +
+                ' <a href="#" class="text-danger text-decoration-none" onclick="deleteDomainAlias(\'' + a.id + '\'); return false;" title="Remove alias"><i class="bi bi-x"></i></a></span>'
+            ).join('') || '<span class="text-muted">—</span>';
             rows += `<tr>
-                <td class="font-monospace small text-muted">${d.id}</td>
-                <td>${d.domain || d.name || '—'}</td>
-                <td>${d.aliases || 0}</td>
-                <td class="text-muted small">${d.created || '—'}</td>
+                <td>${d.domain}${aliasBadge}</td>
+                <td>${dkimBadge}</td>
+                <td>${aliases}</td>
+                <td>
+                    <a href="/domain/${enc}/dns" class="btn btn-sm btn-outline-primary btn-action" title="Check DNS"><i class="bi bi-search"></i> DNS</a>
+                    <a href="/dkim" class="btn btn-sm btn-outline-info btn-action" title="Manage DKIM"><i class="bi bi-key"></i> DKIM</a>
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteDomain('${d.domain}')" title="Delete Domain"><i class="bi bi-trash"></i></button>
+                </td>
             </tr>`;
         });
-        return `<div class="table-responsive">
+        return `<div class="d-flex justify-content-between align-items-center p-2 border-bottom">
+            <span class="text-muted small">${domains.length} domain(s)</span>
+            <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#newDomainModal"><i class="bi bi-plus-lg"></i> New Domain Alias</button>
+        </div>
+        <div class="table-responsive">
             <table class="table table-hover align-middle">
-                <thead><tr><th>ID</th><th>Domain</th><th>Aliases</th><th>Created</th></tr></thead>
+                <thead><tr>
+                    <th data-sort="domain">Domain${sortArrow('domain')}</th>
+                    <th data-sort="dkim">DKIM${sortArrow('dkim')}</th>
+                    <th data-sort="aliases">Aliases${sortArrow('aliases')}</th>
+                    <th style="width: 200px;">Actions</th>
+                </tr></thead>
                 <tbody>${rows}</tbody>
             </table></div>`;
     }
@@ -165,39 +280,107 @@
         }
         let rows = '';
         addresses.forEach(a => {
-            const targets = a.targets || a.forwards || [];
-            const targetHtml = typeof targets === 'string' ? targets
-                : targets.map(t => '<span class="badge bg-secondary me-1">' + t + '</span>').join('') || '<span class="text-muted">—</span>';
+            const targets = a.targets || [];
+            const targetHtml = (typeof targets === 'string' ? [targets] : targets)
+                .map(t => '<span class="badge bg-secondary me-1">' + t + '</span>').join('') || '<span class="text-muted">—</span>';
+            const isForwarded = a.forwarded === true;
+            const typeBadge = isForwarded
+                ? '<span class="badge bg-info text-dark">Forwarder</span>'
+                : '<span class="badge bg-primary">Mailbox</span>';
+            const enc = encodeURIComponent(a.address || '');
+            let actions;
+            if (isForwarded) {
+                actions = `<a href="/address/${enc}/edit" class="btn btn-sm btn-outline-info btn-action" title="Edit"><i class="bi bi-pencil-square"></i></a>
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteAddress('${a.address}', this.closest('tr'))" title="Delete"><i class="bi bi-trash"></i></button>`;
+            } else if (a.user) {
+                actions = `<a href="/user/${a.user}" class="btn btn-sm btn-outline-primary btn-action" title="View User"><i class="bi bi-eye"></i></a>`;
+            } else {
+                actions = '<span class="text-muted">—</span>';
+            }
             rows += `<tr>
-                <td class="font-monospace small text-muted">${a.id}</td>
                 <td>${a.address || '—'}</td>
                 <td>${a.name || '—'}</td>
+                <td>${typeBadge}</td>
                 <td>${targetHtml}</td>
                 <td class="text-muted small">${a.user || '—'}</td>
+                <td style="width: 120px;">${actions}</td>
             </tr>`;
         });
-        return `<div class="table-responsive">
+        return `<div class="d-flex justify-content-between align-items-center p-2 border-bottom">
+            <span class="text-muted small">${addresses.length} address(es)</span>
+            <a href="/address/create" class="btn btn-sm btn-success"><i class="bi bi-plus-lg"></i> New Address</a>
+        </div>
+        <div class="table-responsive">
             <table class="table table-hover align-middle">
-                <thead><tr><th>ID</th><th>Address</th><th>Name</th><th>Forwards To</th><th>User</th></tr></thead>
+                <thead><tr>
+                    <th data-sort="address">Address${sortArrow('address')}</th>
+                    <th data-sort="name">Name${sortArrow('name')}</th>
+                    <th data-sort="type">Type${sortArrow('type')}</th>
+                    <th data-sort="targets">Forwards To${sortArrow('targets')}</th>
+                    <th data-sort="user">User${sortArrow('user')}</th>
+                    <th>Actions</th>
+                </tr></thead>
                 <tbody>${rows}</tbody>
             </table></div>`;
     }
 
-    async function loadDashboard() {
-        const tab = document.querySelector('.nav-tabs .nav-link.active')?.dataset?.tab || currentTab;
+    function renderPagination(tab) {
+        if (tab === 'domains' || state.total === 0) return '';
+        const start = state.results.length ? 1 : 0;
+        const end = state.results.length;
+        return `<div class="d-flex justify-content-between align-items-center p-2 border-top">
+            <span class="text-muted small">${start}–${end} of ${state.total}</span>
+            <div class="btn-group btn-group-sm">
+                <button class="btn btn-outline-secondary" data-page="prev" ${state.previous ? '' : 'disabled'}>
+                    <i class="bi bi-chevron-left"></i> Prev
+                </button>
+                <button class="btn btn-outline-secondary" data-page="next" ${state.next ? '' : 'disabled'}>
+                    Next <i class="bi bi-chevron-right"></i>
+                </button>
+            </div>
+        </div>`;
+    }
+
+    function renderResults(tab) {
+        let html;
+        if (tab === 'users') html = renderUserTable(sortedResults());
+        else if (tab === 'domains') html = renderDomainTable(sortedResults());
+        else html = renderAddressTable(sortedResults());
+        dataEl.innerHTML = html + renderPagination(tab);
+    }
+
+    function sortBy(key) {
+        if (state.sortKey === key) {
+            state.sortDir = -state.sortDir;
+        } else {
+            state.sortKey = key;
+            state.sortDir = 1;
+        }
+        renderResults(activeTab());
+    }
+
+    async function loadDashboard(next, previous) {
+        const tab = activeTab();
         const query = document.getElementById('search-input')?.value || '';
+        const params = new URLSearchParams({ tab: tab, query: query });
+        if (next) params.set('next', next);
+        if (previous) params.set('previous', previous);
         showSpinner();
         try {
-            const resp = await fetch('/api/dashboard?tab=' + tab + '&query=' + encodeURIComponent(query));
+            const resp = await fetch('/api/dashboard?' + params.toString());
             const json = await resp.json();
             hideSpinner();
             if (!resp.ok) {
                 dataEl.innerHTML = '<div class="alert alert-danger m-3">' + (json.error || 'Failed to load data') + '</div>';
                 return;
             }
-            if (tab === 'users') dataEl.innerHTML = renderUserTable(json.results);
-            else if (tab === 'domains') dataEl.innerHTML = renderDomainTable(json.results);
-            else if (tab === 'addresses') dataEl.innerHTML = renderAddressTable(json.results);
+            state.results = json.results || [];
+            state.total = json.total || 0;
+            state.next = json.next || null;
+            state.previous = json.previous || null;
+            state.sortKey = null;
+            state.sortDir = 1;
+            renderResults(tab);
         } catch (e) {
             hideSpinner();
             dataEl.innerHTML = '<div class="alert alert-danger m-3">Network error: ' + e.message + '</div>';
@@ -207,22 +390,37 @@
     // Load on page init
     loadDashboard();
 
-    // Tab clicks — navigate via page reload (preserves URL for sharing)
-    // The actual data loading is handled by the server on full page loads
-    // For single-page AJAX: intercept tab clicks
+    // Column sorting (event delegation)
+    dataEl.addEventListener('click', function(e) {
+        const th = e.target.closest('th[data-sort]');
+        if (th) {
+            sortBy(th.dataset.sort);
+            return;
+        }
+        const pageBtn = e.target.closest('[data-page]');
+        if (pageBtn) {
+            if (pageBtn.dataset.page === 'next' && state.next) {
+                loadDashboard(state.next, null);
+            } else if (pageBtn.dataset.page === 'prev' && state.previous) {
+                loadDashboard(null, state.previous);
+            }
+        }
+    });
+
+    // Tab clicks — intercept and load via AJAX
     document.querySelectorAll('.nav-tabs .nav-link').forEach(link => {
         link.addEventListener('click', function(e) {
             e.preventDefault();
-            // Update active tab
             document.querySelectorAll('.nav-tabs .nav-link').forEach(l => l.classList.remove('active'));
             this.classList.add('active');
-            // Update hidden tab input
             document.querySelector('input[name="tab"]').value = this.dataset.tab;
-            // Update URL without reload
             const url = new URL(window.location);
             url.searchParams.set('tab', this.dataset.tab);
             window.history.pushState({}, '', url);
-            // Load data via AJAX
+            state.results = [];
+            state.total = 0;
+            state.next = null;
+            state.previous = null;
             loadDashboard();
         });
     });

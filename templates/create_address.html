@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-lg-6 col-md-8">
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-at"></i> New Address / Forwarder</h5>
+            </div>
+            <div class="card-body">
+                <form method="post" action="{{ url_for('create_address') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                    <div class="mb-3">
+                        <label for="address" class="form-label">Address <span class="text-danger">*</span></label>
+                        <input type="text" class="form-control" id="address" name="address"
+                               placeholder="e.g. alias@example.com" required>
+                        <div class="form-text">Email address or wildcard (e.g. *@example.com).</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="name" class="form-label">Display Name</label>
+                        <input type="text" class="form-control" id="name" name="name"
+                               placeholder="e.g. Sales">
+                    </div>
+
+                    <div class="mb-4">
+                        <label for="targets" class="form-label">Forward To</label>
+                        <textarea class="form-control" id="targets" name="targets" rows="4"
+                                  placeholder="One target per line, e.g.&#10;person@example.com"></textarea>
+                        <div class="form-text">Email addresses or relay URLs to forward mail to.</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-check-lg"></i> Create Address
+                        </button>
+                        <a href="{{ url_for('index', tab='addresses') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

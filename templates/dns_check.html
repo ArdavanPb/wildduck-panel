@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="row justify-content-center">
+    <div class="col-lg-8 col-md-10">
+        <div class="mb-3">
+            <a href="{{ url_for('index', tab='domains') }}" class="btn btn-outline-secondary btn-sm">
+                <i class="bi bi-arrow-left"></i> Back to Domains
+            </a>
+        </div>
+
+        <div class="card mb-3">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-globe2"></i> DNS Check — {{ domain }}</h5>
+            </div>
+            <div class="card-body">
+                {% if issues %}
+                <div class="list-group">
+                    {% for issue in issues %}
+                    <div class="list-group-item d-flex align-items-center gap-2">
+                        <i class="bi bi-exclamation-triangle-fill text-warning"></i>
+                        <div>
+                            <strong>{{ issue.type | upper }}</strong>
+                            <span class="text-muted">{{ issue.message }}</span>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="alert alert-success mb-0">
+                    <i class="bi bi-check-circle"></i> All checks passed.
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header bg-white">
+                <h5 class="mb-0"><i class="bi bi-list-ul"></i> Current Records</h5>
+            </div>
+            <div class="card-body">
+                <div class="detail-row">
+                    <span class="detail-label">Nameservers</span>
+                    <span class="detail-value">
+                        {% for r in records.get('ns', []) %}
+                            <span class="badge bg-secondary me-1">{{ r }}</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endfor %}
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">MX Records</span>
+                    <span class="detail-value">
+                        {% for r in records.get('mx', []) %}
+                            <span class="badge bg-secondary me-1">{{ r.priority }} {{ r.exchange }}</span>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endfor %}
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">SPF</span>
+                    <span class="detail-value">
+                        {% for r in records.get('spf', []) %}
+                            <code class="d-block text-break">{{ r }}</code>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endfor %}
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">DKIM ({{ dkim_selector or 'no key' }})</span>
+                    <span class="detail-value">
+                        {% for r in records.get('dkim', []) %}
+                            <code class="d-block text-break">{{ r }}</code>
+                        {% else %}
+                            <span class="text-muted">—</span>
+                        {% endfor %}
+                    </span>
+                </div>
+                {% if expected_dkim %}
+                <div class="detail-row">
+                    <span class="detail-label">Expected DKIM</span>
+                    <span class="detail-value"><code class="d-block text-break">{{ expected_dkim }}</code></span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}

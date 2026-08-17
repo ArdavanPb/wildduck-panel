@@ -9,6 +9,7 @@ A single-file Flask web application that provides a web UI for managing a [WildD
 ```
 wildduck-panel/
 ├── app.py                     # Entire Flask application (routes + API helper + auth)
+├── config.py                  # Static config (admin creds, secret key, debug)
 ├── requirements.txt           # Python dependencies
 ├── Dockerfile                 # python:3.13-alpine, runs as non-root "wildduck"
 ├── docker-compose.yml         # Single-service compose, reads .env
@@ -20,6 +21,11 @@ wildduck-panel/
 │   ├── index.html             # Tabbed dashboard (users/domains/addresses)
 │   ├── create_user.html       # User creation form
 │   ├── user_details.html      # User profile + mailbox stats
+│   ├── create_address.html    # Forwarder / alias creation form
+│   ├── edit_address.html      # Forwarder edit form
+│   ├── dkim.html              # DKIM key list + generation
+│   ├── dkim_details.html      # Single DKIM key (DNS TXT record)
+│   ├── dns_check.html         # Per-domain DNS verification
 │   └── partials/
 │       ├── _users_table.html
 │       ├── _domains_table.html
@@ -109,10 +115,16 @@ The function strips trailing slashes from `API_URL`, handles `requests.exception
 ## Gotchas
 
 - **`login.html` does not extend `base.html`** — it's a self-contained page. Don't try to add navbar/global styles there; duplicate them inline if needed.
-- **No pagination**: all users/domains/addresses are fetched at once. The WildDuck API may have server-side pagination but the panel doesn't use it.
+- **Cursor pagination**: users/addresses tabs use WildDuck `next`/`previous` cursors via `/api/dashboard` (limit defaults to 50). Domains are derived in full and sorted client-side.
 - **Toggle endpoint does a GET first**: the `toggle_user_status` route fetches the user's current state before applying the toggle. This ensures the correct `disabled` value is sent.
-- **Quota display in bytes**: storage is always in bytes. The `_users_table.html` partial displays as MB/GB using hardcoded division constants (1048576, 1073741824). The `user_details.html` template uses a `pretty_size` macro for the same purpose.
+- **Quota is entered in GB**: create/edit user forms accept gigabytes and convert with `gb_to_bytes()`/`bytes_to_gb()`; the WildDuck API still uses bytes.
 - **Flask version is pinned to 3.0.3** — this is the latest available on the target Python version. Don't bump without verifying compatibility.
-- **No CSRF protection**: forms don't use CSRF tokens. The panel is designed for internal/trusted network use behind the WildDuck server's auth.
+- **Global CSRF**: a `before_request` hook validates CSRF on all state-changing methods. Templates inject a hidden `csrf_token` field (via a context processor); AJAX calls read the `<meta name="csrf-token">` tag and send it as `X-CSRF-Token` via `csrfHeaders()` in `base.html`.
+- **Login rate-limiting**: in-memory `LOGIN_ATTEMPTS` TTL cache blocks an IP after `MAX_LOGIN_ATTEMPTS` failures (15 min). Audit entries are written by `audit_log()` and surfaced on `/audit`; a generic `after_request` hook logs every successful mutation.
 - **Secret key default is hardcoded** — the `FLASK_SECRET_KEY` falls back to `"dev-secret-change-me"`. Always set this in production.
 - **Health check hits `/login`**: the Docker health check curls `/login`, which works without auth.
+- **Domains are derived, not fetched**: modern WildDuck has no `/domains` endpoint. `get_domains_overview()` builds the domain list from `/addresses`, `/domainaliases`, and `/dkim`. The dashboard `domains` tab uses this.
+- **Forwarders use `/addresses/forwarded`**: create/edit/delete of forwarding addresses go through `POST/PUT /addresses/forwarded` and `DELETE /addresses/forwarded/{address}` (delete is by address string, update is by id).
+- **`dnspython` is imported lazily** inside `dns_check_records()`, so the panel still starts if the dependency is missing; DNS checks just report a friendly issue instead.
+- **Delete is cascade by domain**: `delete_domain()` removes the domain's DKIM key, domain aliases (both directions), and all addresses (forwarded and mailbox).
+- **Tests live in `tests/test_app.py`** and run with `pytest` (dev dep in `requirements-dev.txt`); they stub `api_request` and use a throwaway SQLite DB.

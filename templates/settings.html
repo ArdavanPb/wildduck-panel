@@ -104,6 +104,7 @@
                     Change the password used to log in to this panel.
                 </p>
                 <form method="POST" action="{{ url_for('change_admin_password') }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                     <div class="mb-3">
                         <label for="current_password" class="form-label fw-semibold">Current Password</label>
                         <input type="password" class="form-control" id="current_password"

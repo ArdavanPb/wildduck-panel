@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="csrf-token" content="{{ csrf_token }}">
     <title>WildDuck Admin Panel</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
@@ -96,6 +97,23 @@
             font-size: 3rem;
             margin-bottom: 1rem;
         }
+        /* Dark mode overrides */
+        [data-bs-theme="dark"] body {
+            background: #1b1e21;
+        }
+        [data-bs-theme="dark"] .bg-white {
+            background-color: #2b3035 !important;
+        }
+        [data-bs-theme="dark"] .table thead {
+            background: #343a40 !important;
+            border-color: #495057;
+        }
+        [data-bs-theme="dark"] .quota-bar {
+            background: #495057;
+        }
+        [data-bs-theme="dark"] .detail-row {
+            border-color: #495057;
+        }
     </style>
 </head>
 <body>
@@ -109,14 +127,24 @@
             <a href="{{ url_for('create_user') }}" class="btn btn-success btn-sm">
                 <i class="bi bi-person-plus"></i> New User
             </a>
+            <a href="{{ url_for('dkim') }}" class="btn btn-outline-light btn-sm">
+                <i class="bi bi-key"></i> DKIM
+            </a>
+            <a href="{{ url_for('audit') }}" class="btn btn-outline-light btn-sm" title="Audit Log">
+                <i class="bi bi-clock-history"></i>
+            </a>
             <a href="{{ url_for('settings') }}" class="btn btn-outline-light btn-sm">
                 <i class="bi bi-gear"></i> Settings
             </a>
             <form method="post" action="{{ url_for('clear_cache') }}" class="d-inline" title="Clear API cache">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                 <button class="btn btn-outline-light btn-sm" type="submit">
                     <i class="bi bi-arrow-repeat"></i>
                 </button>
             </form>
+            <button class="btn btn-outline-light btn-sm" id="theme-toggle" type="button" title="Toggle theme">
+                <i class="bi bi-moon-stars"></i>
+            </button>
             <span class="navbar-text small text-light me-2 d-none d-md-inline">
                 <i class="bi bi-person-check"></i> {{ session.get('username', '') }}
             </span>
@@ -152,6 +180,12 @@
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+// CSRF header helper
+function csrfHeaders(extra) {
+    const token = document.querySelector('meta[name="csrf-token"]').content;
+    return Object.assign({ 'X-CSRF-Token': token }, extra || {});
+}
+
 // Generic confirmation dialog for dangerous actions
 function confirmAction(message) {
     return confirm(message || 'Are you sure?');
@@ -159,7 +193,7 @@ function confirmAction(message) {
 
 // Toggle a user's enabled/disabled status
 async function toggleUserStatus(userId, btn) {
-    const resp = await fetch('/user/' + userId + '/toggle-status', { method: 'PUT' });
+    const resp = await fetch('/user/' + userId + '/toggle-status', { method: 'PUT', headers: csrfHeaders() });
     const data = await resp.json();
     if (!resp.ok) {
         alert('Error: ' + (data.error || 'Unknown error'));
@@ -189,7 +223,7 @@ async function toggleUserStatus(userId, btn) {
 // Delete a user
 async function deleteUser(userId, rowElement) {
     if (!confirmAction('Permanently delete this user? This cannot be undone.')) return;
-    const resp = await fetch('/user/' + userId + '/delete', { method: 'DELETE' });
+    const resp = await fetch('/user/' + userId + '/delete', { method: 'DELETE', headers: csrfHeaders() });
     const data = await resp.json();
     if (!resp.ok) {
         alert('Error: ' + (data.error || 'Unknown error'));
@@ -201,6 +235,72 @@ async function deleteUser(userId, rowElement) {
         location.reload();
     }
 }
+
+// Delete a forwarded address
+async function deleteAddress(address, rowElement) {
+    if (!confirmAction('Permanently delete this address? This cannot be undone.')) return;
+    const resp = await fetch('/address/' + encodeURIComponent(address) + '/delete', { method: 'DELETE', headers: csrfHeaders() });
+    const data = await resp.json();
+    if (!resp.ok) {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        return;
+    }
+    if (rowElement) {
+        rowElement.remove();
+    } else {
+        location.reload();
+    }
+}
+
+// Delete a domain and everything on it (addresses, aliases, DKIM)
+async function deleteDomain(domain) {
+    if (!confirmAction('Delete domain "' + domain + '" and all of its addresses, aliases, and DKIM keys? This cannot be undone.')) return;
+    const resp = await fetch('/domain/' + encodeURIComponent(domain) + '/delete', { method: 'DELETE', headers: csrfHeaders() });
+    const data = await resp.json();
+    if (!resp.ok) {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        return;
+    }
+    location.reload();
+}
+
+// Delete a single domain alias
+async function deleteDomainAlias(aliasId) {
+    if (!confirmAction('Remove this domain alias?')) return;
+    const resp = await fetch('/domain/alias/' + aliasId + '/delete', { method: 'DELETE', headers: csrfHeaders() });
+    const data = await resp.json();
+    if (!resp.ok) {
+        alert('Error: ' + (data.error || 'Unknown error'));
+        return;
+    }
+    location.reload();
+}
+
+// Dark / light theme toggle
+(function () {
+    const toggle = document.getElementById('theme-toggle');
+    function applyTheme(theme) {
+        document.documentElement.setAttribute('data-bs-theme', theme);
+        if (toggle) {
+            toggle.innerHTML = theme === 'dark'
+                ? '<i class="bi bi-sun"></i>'
+                : '<i class="bi bi-moon-stars"></i>';
+        }
+        localStorage.setItem('theme', theme);
+    }
+    const saved = localStorage.getItem('theme');
+    if (saved) {
+        applyTheme(saved);
+    } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+        applyTheme('dark');
+    }
+    if (toggle) {
+        toggle.addEventListener('click', function () {
+            const current = document.documentElement.getAttribute('data-bs-theme');
+            applyTheme(current === 'dark' ? 'light' : 'dark');
+        });
+    }
+})();
 </script>
 
 </body>

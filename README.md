@@ -24,18 +24,32 @@ A modern, production-ready Flask web application for managing a
   Sessions are stored in SQLite and survive restarts.
 - **Dynamic API configuration** — Change the WildDuck API URL and token
   on the fly via the **Settings** page. No `.env` file, no restart required.
-- **User Dashboard** — Search, list, and manage WildDuck users.
-- **Create User** — Form-driven user creation with quota, spam level, and
-  rate limit settings.
+- **User Dashboard** — Search, list, sort, and page through WildDuck users.
+- **Create User** — Form-driven user creation with quota (in GB), spam level,
+  and rate limit settings.
 - **Enable / Disable** — One-click toggle to suspend or restore user accounts.
 - **Delete User** — Permanently remove users with a confirmation prompt.
 - **User Details** — View full profile including mailbox storage usage,
   quota, and message counts.
-- **Domain Browser** — List all configured domains.
-- **Address / Alias Browser** — List all email addresses and aliases with
-  forwarding targets.
+- **User Aliases** — Add and remove email addresses/aliases on a user from
+  the edit page.
+- **Address / Alias Management** — Create, edit, and delete forwarding
+  addresses (aliases) with one or more targets.
+- **Domain Management** — Browse every domain derived from addresses,
+  aliases, and DKIM keys; add/remove domain aliases and delete a domain
+  together with all of its addresses, aliases, and DKIM keys.
+- **DKIM Management** — Generate, view, and delete DKIM keys; see the exact
+  DNS TXT record to publish.
+- **DNS Check** — Verify a domain's nameservers, MX, SPF, and DKIM records
+  against what is actually published.
+- **Pagination & Sorting** — Server-side cursor pagination and clickable
+  column sorting on the users and addresses tabs.
+- **Security** — Global CSRF protection, login rate-limiting, and an
+  append-only audit log of admin actions.
+- **Dark mode** — Light/dark theme toggle (remembered per browser).
 - **Connection retry** — Transient API failures (timeout, connection) are
   retried automatically before showing an error.
+- **Tests** — A `pytest` suite covers helpers, auth, CSRF, and routes.
 - **CLI support** — Reset API settings from the command line with
   `flask reset-settings`.
 
@@ -46,6 +60,7 @@ wildduck-panel/
 ├── app.py                          # Flask application (routes + API helpers)
 ├── config.py                       # Static config (admin credentials, secret key)
 ├── requirements.txt                # Python dependencies
+├── requirements-dev.txt            # Test dependencies (pytest)
 ├── Dockerfile                      # python:3.13-alpine, runs as non-root
 ├── docker-compose.yml              # Docker Compose service definition
 ├── .gitignore
@@ -55,11 +70,19 @@ wildduck-panel/
 │   ├── index.html                  # Dashboard (Users / Domains / Addresses tabs)
 │   ├── create_user.html            # User creation form
 │   ├── user_details.html           # User profile + mailbox statistics
+│   ├── create_address.html         # Forwarding address / alias creation form
+│   ├── edit_address.html           # Forwarding address edit form
+│   ├── dkim.html                   # DKIM key list + generation
+│   ├── dkim_details.html           # Single DKIM key (DNS TXT record)
+│   ├── dns_check.html              # Per-domain DNS verification
+│   ├── audit.html                  # Audit log of admin actions
 │   ├── settings.html               # API URL / token configuration
 │   └── partials/
 │       ├── _users_table.html       # Users table partial
 │       ├── _domains_table.html     # Domains table partial
 │       └── _addresses_table.html   # Addresses table partial
+├── tests/
+│   └── test_app.py                 # pytest suite
 └── README.md
 ```
 
@@ -194,20 +217,44 @@ source venv/bin/activate
 flask --app app reset-settings
 ```
 
+## Tests
+
+A `pytest` suite covers helpers, auth, CSRF, rate-limiting, dashboard
+pagination, domain derivation, and cascade delete. It stubs the WildDuck API
+and runs against a throwaway SQLite database — no live server required.
+
+```bash
+source venv/bin/activate
+pip install -r requirements-dev.txt
+python -m pytest tests/ -q
+```
+
 ## API Reference
 
 All requests to the WildDuck API include the header `X-Access-Token: <token>`.
 
-| Action              | Method | Endpoint                  |
-|---------------------|--------|---------------------------|
-| List / Search Users | GET    | `/users?query=...`        |
-| Create User         | POST   | `/users`                  |
-| Get User            | GET    | `/users/{id}`             |
-| Update User         | PUT    | `/users/{id}`             |
-| Delete User         | DELETE | `/users/{id}`             |
-| Get Mailbox         | GET    | `/users/{id}/mailbox`     |
-| List Domains        | GET    | `/domains`                |
-| List Addresses      | GET    | `/addresses?query=...`    |
+| Action              | Method | Endpoint                        |
+|---------------------|--------|---------------------------------|
+| List / Search Users | GET    | `/users?query=...`              |
+| Create User         | POST   | `/users`                        |
+| Get User            | GET    | `/users/{id}`                   |
+| Update User         | PUT    | `/users/{id}`                   |
+| Delete User         | DELETE | `/users/{id}`                   |
+| List Addresses      | GET    | `/addresses?query=...`          |
+| Create Forwarder    | POST   | `/addresses/forwarded`          |
+| Update Forwarder    | PUT    | `/addresses/forwarded/{id}`     |
+| Delete Forwarder    | DELETE | `/addresses/forwarded/{address}`|
+| List Domain Aliases | GET    | `/domainaliases`                |
+| Create Domain Alias | POST   | `/domainaliases`                |
+| Delete Domain Alias | DELETE | `/domainaliases/{id}`           |
+| List DKIM Keys      | GET    | `/dkim`                         |
+| Generate DKIM Key   | POST   | `/dkim`                         |
+| Get DKIM Key        | GET    | `/dkim/{id}`                    |
+| Delete DKIM Key     | DELETE | `/dkim/{id}`                    |
+
+> **Note:** WildDuck has no dedicated domains collection. The panel derives
+> the domain list from addresses, domain aliases, and DKIM keys, and performs
+> DNS checks locally with `dnspython`.
 
 ## Dependencies
 
@@ -218,4 +265,10 @@ Flask-Session==0.8.0
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy==2.0.35
 cachelib==0.9.0
+cachetools==5.5.1
+Flask-Compress==1.15
+python-dotenv==1.1.1
+dnspython==2.6.1
 ```
+
+Development/test dependencies live in `requirements-dev.txt` (adds `pytest`).
