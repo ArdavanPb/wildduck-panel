@@ -112,13 +112,15 @@
                             <span class="badge bg-primary">main</span>
                             {% endif %}
                         </div>
-                        <form method="post" action="{{ url_for('remove_user_address', user_id=user.id, address=addr.get('address', '')) }}"
+                        {% if not addr.get('main') %}
+                        <form method="post" action="{{ url_for('remove_user_address', user_id=user.id, address_id=addr.get('id', '')) }}"
                               onsubmit="return confirmAction('Remove address {{ addr.get('address', '') }}?');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
                             <button type="submit" class="btn btn-sm btn-outline-danger btn-action" title="Remove">
                                 <i class="bi bi-x"></i>
                             </button>
                         </form>
+                        {% endif %}
                     </li>
                     {% endfor %}
                 </ul>

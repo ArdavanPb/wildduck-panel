@@ -192,7 +192,12 @@ def test_cascade_delete_domain(client, monkeypatch):
                 {"id": "ad1", "address": "a@example.com", "forwarded": True},
                 {"id": "ad2", "address": "b@example.com", "forwarded": False, "user": "u1"},
                 {"id": "ad3", "address": "c@other.com", "forwarded": True},
+                {"id": "ad4", "address": "d@example.com", "forwarded": False, "user": "u2"},
             ]}, None
+        if path == "/users/u1":
+            return {"id": "u1", "address": "main@other.com"}, None
+        if path == "/users/u2":
+            return {"id": "u2", "address": "d@example.com"}, None
         return {"success": True}, None
 
     stub_api(monkeypatch, handler)
@@ -204,9 +209,11 @@ def test_cascade_delete_domain(client, monkeypatch):
     assert "/dkim/dkim1" in deleted
     assert "/domainaliases/al1" in deleted
     assert "/domainaliases/al2" in deleted
-    assert "/addresses/forwarded/a@example.com" in deleted
-    assert "/users/u1/addresses/b@example.com" in deleted
-    assert "/addresses/forwarded/c@other.com" not in deleted
+    assert "/addresses/forwarded/ad1" in deleted
+    assert "/users/u1/addresses/ad2" in deleted
+    assert "/users/u2" in deleted
+    assert "/addresses/forwarded/ad3" not in deleted
+    assert "/addresses/forwarded/ad4" not in deleted
 
 
 # ── Audit log ───────────────────────────────────────────────────────────

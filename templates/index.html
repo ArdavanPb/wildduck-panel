@@ -291,7 +291,7 @@
             let actions;
             if (isForwarded) {
                 actions = `<a href="/address/${enc}/edit" class="btn btn-sm btn-outline-info btn-action" title="Edit"><i class="bi bi-pencil-square"></i></a>
-                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteAddress('${a.address}', this.closest('tr'))" title="Delete"><i class="bi bi-trash"></i></button>`;
+                    <button class="btn btn-sm btn-outline-danger btn-action" onclick="deleteAddress('${a.id}', this.closest('tr'))" title="Delete"><i class="bi bi-trash"></i></button>`;
             } else if (a.user) {
                 actions = `<a href="/user/${a.user}" class="btn btn-sm btn-outline-primary btn-action" title="View User"><i class="bi bi-eye"></i></a>`;
             } else {

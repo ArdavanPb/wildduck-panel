@@ -124,7 +124,7 @@ The function strips trailing slashes from `API_URL`, handles `requests.exception
 - **Secret key default is hardcoded** — the `FLASK_SECRET_KEY` falls back to `"dev-secret-change-me"`. Always set this in production.
 - **Health check hits `/login`**: the Docker health check curls `/login`, which works without auth.
 - **Domains are derived, not fetched**: modern WildDuck has no `/domains` endpoint. `get_domains_overview()` builds the domain list from `/addresses`, `/domainaliases`, and `/dkim`. The dashboard `domains` tab uses this.
-- **Forwarders use `/addresses/forwarded`**: create/edit/delete of forwarding addresses go through `POST/PUT /addresses/forwarded` and `DELETE /addresses/forwarded/{address}` (delete is by address string, update is by id).
+- **Forwarders use `/addresses/forwarded`**: create/edit/delete of forwarding addresses go through `POST/PUT /addresses/forwarded` and `DELETE /addresses/forwarded/{id}` (delete and update are by address ID, never by email string). User addresses are deleted via `DELETE /users/{user}/addresses/{id}` (also by ID); a user's main address cannot be deleted individually, delete the whole user instead.
 - **`dnspython` is imported lazily** inside `dns_check_records()`, so the panel still starts if the dependency is missing; DNS checks just report a friendly issue instead.
-- **Delete is cascade by domain**: `delete_domain()` removes the domain's DKIM key, domain aliases (both directions), and all addresses (forwarded and mailbox).
+- **Delete is cascade by domain**: `delete_domain()` removes the domain's DKIM key, domain aliases (both directions), all forwarded addresses, and either deletes users whose main address is on the domain or removes individual mailbox addresses (by address ID).
 - **Tests live in `tests/test_app.py`** and run with `pytest` (dev dep in `requirements-dev.txt`); they stub `api_request` and use a throwaway SQLite DB.

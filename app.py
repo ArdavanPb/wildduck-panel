@@ -837,15 +837,15 @@ def add_user_address(user_id):
     return redirect(url_for("edit_user", user_id=user_id))
 
 
-@app.route("/user/<user_id>/address/<path:address>/delete", methods=["POST"])
+@app.route("/user/<user_id>/address/<address_id>/delete", methods=["POST"])
 @login_required
-def remove_user_address(user_id, address):
-    _, err = api_request("DELETE", f"/users/{user_id}/addresses/{address}")
+def remove_user_address(user_id, address_id):
+    _, err = api_request("DELETE", f"/users/{user_id}/addresses/{address_id}")
     if err:
         flash(f"Failed to remove address: {err}", "danger")
     else:
         invalidate_cache("/users")
-        flash(f"Address '{address}' removed.", "success")
+        flash("Address removed.", "success")
     return redirect(url_for("edit_user", user_id=user_id))
 
 
@@ -1148,17 +1148,38 @@ def delete_domain(domain):
 
     addresses, err = api_request("GET", "/addresses", params={"limit": 250})
     if err is None:
-        for a in _extract_results(addresses, "addresses"):
-            if _domain_of(a.get("address")) != domain:
-                continue
+        domain_addresses = [
+            a
+            for a in _extract_results(addresses, "addresses")
+            if _domain_of(a.get("address")) == domain
+        ]
+
+        # Users whose main address lives on this domain must be deleted whole;
+        # WildDuck refuses to delete a user's main address individually.
+        main_domain_users = set()
+        for uid in {a.get("user") for a in domain_addresses if a.get("user")}:
+            u, uerr = api_request("GET", f"/users/{uid}")
+            if uerr is None and isinstance(u, dict) and _domain_of(u.get("address")) == domain:
+                main_domain_users.add(uid)
+
+        deleted_users = set()
+        for a in domain_addresses:
+            address_value = a.get("address")
+            address_id = a.get("id")
+            uid = a.get("user")
             if a.get("forwarded"):
-                _, err = api_request("DELETE", f"/addresses/forwarded/{a.get('address')}")
-            elif a.get("user"):
-                _, err = api_request("DELETE", f"/users/{a.get('user')}/addresses/{a.get('address')}")
+                _, err = api_request("DELETE", f"/addresses/forwarded/{address_id}")
+            elif uid in main_domain_users:
+                if uid in deleted_users:
+                    continue
+                _, err = api_request("DELETE", f"/users/{uid}")
+                deleted_users.add(uid)
+            elif uid:
+                _, err = api_request("DELETE", f"/users/{uid}/addresses/{address_id}")
             else:
                 continue
             if err:
-                errors.append(f"Address {a.get('address')}: {err}")
+                errors.append(f"Address {address_value}: {err}")
 
     invalidate_cache()
     if errors:
